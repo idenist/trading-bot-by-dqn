@@ -14,11 +14,11 @@ import matplotlib.pyplot as plt
 # 0. 데이터 로드 및 전처리 함수
 #############################################
 def load_trade_data(csv_path, chunksize=5_000_000):
-    print(f"📂 CSV 경로: {csv_path}")
-    print("📥 CSV를 chunk 단위로 읽는 중...")
+    print(f" CSV 경로: {csv_path}")
+    print(" CSV를 chunk 단위로 읽는 중...")
     chunk_list = []
     for i, chunk in enumerate(pd.read_csv(csv_path, chunksize=chunksize, low_memory=False)):
-        print(f"📦 Chunk {i+1} 로드됨 (행 수: {len(chunk)})")
+        print(f" Chunk {i+1} 로드됨 (행 수: {len(chunk)})")
         # TR_CORR가 0인 행만 선택
         chunk = chunk[chunk['TR_CORR'] == 0].copy()
         # 날짜 및 시간 전처리
@@ -29,7 +29,7 @@ def load_trade_data(csv_path, chunksize=5_000_000):
         chunk = chunk[['full_datetime', 'PRICE', 'SIZE', 'SYM_ROOT']]
         chunk_list.append(chunk)
     df = pd.concat(chunk_list).reset_index(drop=True)
-    print(f"✅ 전체 병합 완료, 총 행 수: {len(df)}")
+    print(f" 전체 병합 완료, 총 행 수: {len(df)}")
     return df
 
 def prepare_tick_data(df, symbol='AAPL', time_window='1T'):
