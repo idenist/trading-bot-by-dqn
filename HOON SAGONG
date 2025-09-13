@@ -1,0 +1,467 @@
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+import random
+from collections import deque, namedtuple
+import matplotlib.pyplot as plt
+
+#############################################
+# 0. 데이터 로드 및 전처리 함수
+#############################################
+def load_trade_data(csv_path, chunksize=5_000_000):
+    print(f" CSV 경로: {csv_path}")
+    print(" CSV를 chunk 단위로 읽는 중...")
+    chunk_list = []
+    for i, chunk in enumerate(pd.read_csv(csv_path, chunksize=chunksize, low_memory=False)):
+        print(f" Chunk {i+1} 로드됨 (행 수: {len(chunk)})")
+        # TR_CORR가 0인 행만 선택
+        chunk = chunk[chunk['TR_CORR'] == 0].copy()
+        # 날짜 및 시간 전처리
+        chunk['DATE'] = pd.to_datetime(chunk['DATE'])
+        chunk['time_delta'] = pd.to_timedelta(chunk['TIME_M'])
+        chunk['full_datetime'] = chunk['DATE'] + chunk['time_delta']
+        # 필요한 컬럼만 선택
+        chunk = chunk[['full_datetime', 'PRICE', 'SIZE', 'SYM_ROOT']]
+        chunk_list.append(chunk)
+    df = pd.concat(chunk_list).reset_index(drop=True)
+    print(f" 전체 병합 완료, 총 행 수: {len(df)}")
+    return df
+
+def prepare_tick_data(df, symbol='AAPL', time_window='1T'):
+    """
+    틱 데이터를 시간창 단위로 OHLCV 형식으로 변환
+    time_window: 예) '1T': 1분, '5T': 5분, '1S': 1초
+    """
+    # 특정 종목만 필터링
+    symbol_df = df[df['SYM_ROOT'] == symbol].copy()
+    
+    # 시간 순서로 정렬
+    symbol_df = symbol_df.sort_values('full_datetime')
+    
+    # 시간창별로 OHLCV 계산
+    ohlcv = symbol_df.set_index('full_datetime').resample(time_window).agg({
+        'PRICE': ['first', 'max', 'min', 'last'],
+        'SIZE': 'sum'
+    })
+    
+    # 멀티레벨 칼럼을 단일 레벨로 변경
+    ohlcv.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
+    
+    # 인덱스를 리셋하고 날짜/시간 칼럼 추가
+    ohlcv = ohlcv.reset_index()
+    
+    # NaN이 있는 행 제거 (거래가 없는 시간창)
+    ohlcv = ohlcv.dropna()
+    
+    return ohlcv
+
+def split_data_for_training(df, train_ratio=0.7):
+    """
+    시간 순서에 따라 데이터를 학습용과 테스트용으로 분리
+    """
+    total_records = len(df)
+    train_size = int(total_records * train_ratio)
+    
+    train_data = df.iloc[:train_size].copy()
+    test_data = df.iloc[train_size:].copy()
+    
+    print(f"학습 데이터: {len(train_data)} 레코드 ({train_data['full_datetime'].min()} ~ {train_data['full_datetime'].max()})")
+    print(f"테스트 데이터: {len(test_data)} 레코드 ({test_data['full_datetime'].min()} ~ {test_data['full_datetime'].max()})")
+    
+    return train_data, test_data
+
+#############################################
+# 1. 환경: StockTradingEnv (거래 비용 및 수량 제한 추가)
+#############################################
+class StockTradingEnv(gym.Env):
+    metadata = {'render.modes': ['human']}
+
+    def __init__(self, df):
+        super(StockTradingEnv, self).__init__()
+        self.df = df
+        self.max_steps = len(df) - 2  # 익일 가격 사용을 위해 -2
+        self.current_step = 0
+        self.initial_balance = 10000    # 초기 자본 $10,000
+        self.balance = self.initial_balance
+        self.shares_held = 0
+        self.avg_buy_price = 0.0
+        # 거래 비용: 0.1%의 거래 비용 적용
+        self.transaction_cost = 0.001
+
+        # 상태 공간: OHLCV 5개 피처
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(5,), dtype=np.float32)
+        # 행동 공간: 2 (0: 거래, 1: 홀드)
+        self.action_space = spaces.Discrete(2)
+
+    def _next_observation(self):
+        # OHLCV 데이터를 상태로 사용
+        obs = np.array([
+            self.df['Open'].iloc[self.current_step],
+            self.df['High'].iloc[self.current_step],
+            self.df['Low'].iloc[self.current_step],
+            self.df['Close'].iloc[self.current_step],
+            self.df['Volume'].iloc[self.current_step]
+        ], dtype=np.float32)
+        return obs
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.balance = self.initial_balance
+        self.shares_held = 0
+        self.avg_buy_price = 0.0
+        self.current_step = 0
+        return self._next_observation(), {}
+
+    # quantity: 거래 시도할 주식 수 (기본값 1)
+    def step(self, action, quantity=1):
+        done = False
+        self.current_step += 1
+
+        current_price = self.df['Close'].iloc[self.current_step]
+        if self.current_step + 1 < len(self.df):
+            next_price = self.df['Close'].iloc[self.current_step + 1]
+        else:
+            next_price = current_price
+
+        reward = 0.0
+
+        # Buy Regime: 잔고가 충분하면 매수 모드
+        if self.balance >= current_price:
+            if action == 0:  # Buy action
+                max_shares = int(self.balance // current_price)
+                quantity = min(quantity, max_shares)
+                # 거래 비용
+                cost = self.transaction_cost * quantity * current_price
+                # 업데이트: 매수 시에는 평균 매수가 갱신 (가중평균)
+                if self.shares_held == 0:
+                    self.avg_buy_price = current_price
+                else:
+                    self.avg_buy_price = ((self.avg_buy_price * self.shares_held) + (current_price * quantity)) / (self.shares_held + quantity)
+                self.shares_held += quantity
+                self.balance -= quantity * current_price + cost
+                # 보상: (익일 가격 상승률)에서 거래 비용 반영
+                reward = (next_price - current_price) / current_price - self.transaction_cost
+            elif action == 1:  # Hold in Buy Regime
+                reward = - (next_price - current_price) / current_price
+
+        # Sell Regime: 잔고 부족하거나 주식을 보유 중이면 판매 모드
+        elif self.shares_held > 0:
+            if action == 0:  # Sell action
+                quantity = min(quantity, self.shares_held)
+                cost = self.transaction_cost * quantity * current_price
+                profit_ratio = (current_price - self.avg_buy_price) / (self.avg_buy_price + 1e-6)
+                reward = profit_ratio - self.transaction_cost
+                self.balance += quantity * current_price - cost
+                self.shares_held -= quantity
+                if self.shares_held == 0:
+                    self.avg_buy_price = 0.0
+            elif action == 1:  # Hold in Sell Regime
+                reward = - (current_price - next_price) / current_price
+        else:
+            reward = 0.0
+
+        if self.current_step >= self.max_steps:
+            done = True
+
+        obs = self._next_observation()
+        return obs, reward, done, False, {}
+
+    def render(self, mode='human', close=False):
+        current_price = self.df['Close'].iloc[self.current_step]
+        net_worth = self.balance + self.shares_held * current_price
+        profit = net_worth - self.initial_balance
+        timestamp = self.df['full_datetime'].iloc[self.current_step].strftime('%Y-%m-%d %H:%M:%S.%f') if 'full_datetime' in self.df.columns else f"Step {self.current_step}"
+        print(f"Time: {timestamp}, Balance: {self.balance:.2f}, Shares: {self.shares_held}, Price: {current_price:.2f}, Profit: {profit:.2f}")
+
+#############################################
+# 2. Agent, DQN, ReplayBuffer (기존 코드 유지)
+#############################################
+Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
+
+class ReplayBuffer:
+    def __init__(self, capacity=1000):
+        self.memory = deque(maxlen=capacity)
+    def add(self, *args):
+        self.memory.append(Transition(*args))
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+    def __len__(self):
+        return len(self.memory)
+
+class DQN(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(DQN, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 128)
+        self.fc2 = nn.Linear(128, 128)
+        self.fc3 = nn.Linear(128, 128)
+        self.fc4 = nn.Linear(128, output_dim)
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        return self.fc4(x)
+
+class Agent:
+    def __init__(self, state_size, action_size, lr=0.001, gamma=0.001, epsilon=1.0, epsilon_min=0.01, epsilon_decay=0.995):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.gamma = gamma
+
+        self.epsilon = epsilon
+        self.epsilon_min = epsilon_min
+        self.epsilon_decay = epsilon_decay
+
+        self.policy_net = DQN(state_size, action_size)
+        self.target_net = DQN(state_size, action_size)
+        self.optimizer = optim.Adam(self.policy_net.parameters(), lr=lr)
+
+        self.buffer = ReplayBuffer()
+        self.update_target_net()
+
+    def update_target_net(self):
+        self.target_net.load_state_dict(self.policy_net.state_dict())
+
+    def act(self, state):
+        if np.random.rand() < self.epsilon:
+            return np.random.choice(self.action_size)
+        state = torch.FloatTensor(state).unsqueeze(0)
+        with torch.no_grad():
+            return self.policy_net(state).argmax().item()
+
+    def remember(self, *args):
+        self.buffer.add(*args)
+
+    def replay(self, batch_size):
+        if len(self.buffer) < batch_size:
+            return
+        transitions = self.buffer.sample(batch_size)
+        batch = Transition(*zip(*transitions))
+
+        state_batch = torch.FloatTensor(batch.state)
+        action_batch = torch.LongTensor(batch.action).unsqueeze(1)
+        reward_batch = torch.FloatTensor(batch.reward).unsqueeze(1)
+        next_state_batch = torch.FloatTensor(batch.next_state)
+        done_batch = torch.FloatTensor(batch.done).unsqueeze(1)
+
+        current_q = self.policy_net(state_batch).gather(1, action_batch)
+        next_q = self.target_net(next_state_batch).max(dim=1)[0].detach().unsqueeze(1)
+        expected_q = reward_batch + self.gamma * next_q * (1 - done_batch)
+
+        loss = F.mse_loss(current_q, expected_q)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+
+#############################################
+# 3. 에이전트 훈련 함수
+#############################################
+def train(env, buy_agent, sell_agent, num_episodes=20, batch_size=32, target_update_freq=4):
+    episode_rewards = []
+    
+    for episode in range(num_episodes):
+        state, _ = env.reset()
+        done = False
+        total_reward = 0
+        step = 0
+
+        while not done:
+            current_price = env.df['Close'].iloc[env.current_step]
+
+            # regime 결정: 잔고가 충분하면 buy_agent, 보유 주식이 있으면 sell_agent 선택
+            if env.balance >= current_price:
+                agent = buy_agent
+                max_quantity = int(env.balance // current_price)
+                quantity = random.randint(1, max_quantity) if max_quantity > 0 else 1
+            elif env.shares_held > 0:
+                agent = sell_agent
+                max_quantity = env.shares_held
+                quantity = random.randint(1, max_quantity) if max_quantity > 0 else 1
+            else:
+                next_state, reward, done, _, _ = env.step(1, quantity=1)
+                state = next_state
+                total_reward += reward
+                continue
+
+            action = agent.act(state)
+            next_state, reward, done, _, _ = env.step(action, quantity=quantity)
+
+            agent.remember(state, action, reward, next_state, done)
+            agent.replay(batch_size)
+
+            state = next_state
+            total_reward += reward
+            step += 1
+
+        if (episode + 1) % target_update_freq == 0:
+            buy_agent.update_target_net()
+            sell_agent.update_target_net()
+
+        episode_rewards.append(total_reward)
+        print(f"Episode {episode+1}/{num_episodes} - Total reward: {total_reward:.2f} - Steps: {step}")
+    
+    return episode_rewards
+
+def test(env, buy_agent, sell_agent):
+    """
+    학습된 에이전트로 테스트하는 함수
+    """
+    state, _ = env.reset()
+    done = False
+    total_reward = 0
+    trades = []
+    
+    print("\n===== 테스트 시작 =====")
+    
+    while not done:
+        current_price = env.df['Close'].iloc[env.current_step]
+        timestamp = env.df['full_datetime'].iloc[env.current_step] if 'full_datetime' in env.df.columns else f"Step {env.current_step}"
+        
+        # regime 결정
+        if env.balance >= current_price:
+            agent = buy_agent
+            max_quantity = int(env.balance // current_price)
+            quantity = max_quantity if max_quantity > 0 else 1
+            agent_type = "Buy"
+        elif env.shares_held > 0:
+            agent = sell_agent
+            quantity = env.shares_held
+            agent_type = "Sell"
+        else:
+            action = 1  # 홀드
+            next_state, reward, done, _, _ = env.step(action, quantity=1)
+            state = next_state
+            total_reward += reward
+            continue
+        
+        action = agent.act(state)
+        next_state, reward, done, _, _ = env.step(action, quantity=quantity)
+        
+        # 현재 상태 출력
+        action_name = "매수" if action == 0 and agent_type == "Buy" else \
+                      "매도" if action == 0 and agent_type == "Sell" else "홀드"
+        
+        # 거래 기록
+        trades.append({
+            'timestamp': timestamp,
+            'price': current_price,
+            'action': action_name,
+            'quantity': quantity if action == 0 else 0,
+            'balance': env.balance,
+            'shares': env.shares_held,
+            'reward': reward
+        })
+        
+        env.render()
+        
+        state = next_state
+        total_reward += reward
+    
+    final_balance = env.balance + env.shares_held * env.df['Close'].iloc[-1]
+    profit_pct = (final_balance - env.initial_balance) / env.initial_balance * 100
+    
+    print("\n===== 테스트 결과 =====")
+    print(f"최종 자산: ${final_balance:.2f}")
+    print(f"수익률: {profit_pct:.2f}%")
+    print(f"총 보상: {total_reward:.2f}")
+    
+    # 거래 기록을 데이터프레임으로 변환
+    trades_df = pd.DataFrame(trades)
+    return trades_df
+
+def plot_test_results(trades_df, test_data):
+    """
+    테스트 결과를 시각화하는 함수
+    """
+    # 타임스탬프와 순자산 추출
+    timestamps = test_data['full_datetime'].values
+    prices = test_data['Close'].values
+    
+    # 순자산 계산
+    net_worths = trades_df['balance'] + trades_df['shares'] * trades_df['price']
+    
+    plt.figure(figsize=(14, 10))
+    
+    # 주가 그래프
+    plt.subplot(2, 1, 1)
+    plt.plot(timestamps, prices, label='Stock Price')
+    plt.title('Stock Price During Test Period')
+    plt.xlabel('Time')
+    plt.ylabel('Price ($)')
+    plt.grid(True)
+    plt.legend()
+    
+    # 순자산 그래프
+    plt.subplot(2, 1, 2)
+    plt.plot(trades_df['timestamp'], net_worths, label='Portfolio Value')
+    
+    # 매수/매도 표시
+    buys = trades_df[trades_df['action'] == '매수']
+    sells = trades_df[trades_df['action'] == '매도']
+    
+    plt.scatter(buys['timestamp'], buys['price'], marker='^', color='g', s=100, label='Buy')
+    plt.scatter(sells['timestamp'], sells['price'], marker='v', color='r', s=100, label='Sell')
+    
+    plt.title('Portfolio Value and Trading Actions')
+    plt.xlabel('Time')
+    plt.ylabel('Value ($)')
+    plt.grid(True)
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.savefig('trading_results.png')
+    plt.show()
+
+#############################################
+# 4. 메인 함수
+#############################################
+def main():
+    # 데이터 로드
+    csv_path = r"D:\wrds\taq_aapl_nvda_2018\aapl_nvda_2018.csv"
+    df = load_trade_data(csv_path)
+    
+    # 데이터 필터링 (예: AAPL 종목만 선택)
+    symbol = 'AAPL'
+    
+    # 틱 데이터를 시간 간격으로 리샘플링 (예: 1분 간격)
+    tick_data = prepare_tick_data(df, symbol=symbol, time_window='1T')
+    
+    # 학습/테스트 데이터 분리
+    train_data, test_data = split_data_for_training(tick_data, train_ratio=0.7)
+    
+    # 환경 생성
+    train_env = StockTradingEnv(train_data)
+    
+    # 상태 및 행동 크기 설정
+    state_size = 5  # OHLCV 데이터 (5개 피처)
+    action_size = 2  # 0: 거래, 1: 홀드
+    
+    # 에이전트 생성
+    buy_agent = Agent(state_size, action_size)
+    sell_agent = Agent(state_size, action_size)
+    
+    # 학습 진행
+    print("\n===== 학습 시작 =====")
+    episode_rewards = train(train_env, buy_agent, sell_agent, num_episodes=20, batch_size=32, target_update_freq=4)
+    
+    # 테스트 환경 생성
+    test_env = StockTradingEnv(test_data)
+    
+    # 테스트 진행
+    trades_df = test(test_env, buy_agent, sell_agent)
+    
+    # 결과 시각화
+    plot_test_results(trades_df, test_data)
+    
+    return buy_agent, sell_agent, trades_df
+
+if __name__ == "__main__":
+    main()
