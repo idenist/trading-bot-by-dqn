@@ -1,5 +1,7 @@
 // app/(tabs)/index.tsx
-import React, { useMemo, useState, useCallback } from "react";
+import { getPortfolio, getPositions } from "@/lib/api/portfolio";
+import { PortfolioSnapshot, Position } from "@/lib/api/types";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   SafeAreaView,
   View,
@@ -14,39 +16,39 @@ import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 
 /** ---------- 타입 (백엔드 붙일 때 그대로 교체) ---------- */
-type Currency = "KRW" | "USD";
-type PortfolioSnapshot = {
-  currency: Currency;
-  totalEquity: string;
-  cash: string;
-  pnlDay: string;   // "12345"
-  pnlDayPct: string; // "0.0123" -> 1.23%
-  updatedAt: string; // ISO
-};
-type Position = {
-  symbol: string;
-  name?: string;
-  qty: string;
-  avgPrice: string;
-  lastPrice: string;
-  pnl: string;
-  pnlPct: string; // "-0.0345"
-};
+// type Currency = "KRW" | "USD";
+// type PortfolioSnapshot = {
+//   currency: Currency;
+//   totalEquity: string;
+//   cash: string;
+//   pnlDay: string;   // "12345"
+//   pnlDayPct: string; // "0.0123" -> 1.23%
+//   updatedAt: string; // ISO
+// };
+// type Position = {
+//   symbol: string;
+//   name?: string;
+//   qty: string;
+//   avgPrice: string;
+//   lastPrice: string;
+//   pnl: string;
+//   pnlPct: string; // "-0.0345"
+// };
 
 /** ---------- 더미 데이터 ---------- */
-const MOCK_PF: PortfolioSnapshot = {
-  currency: "KRW",
-  totalEquity: "123456789.12",
-  cash: "34567890",
-  pnlDay: "1234567",
-  pnlDayPct: "0.0082",
-  updatedAt: new Date().toISOString(),
-};
+// const MOCK_PF: PortfolioSnapshot = {
+//   currency: "KRW",
+//   totalEquity: "123456789.12",
+//   cash: "34567890",
+//   pnlDay: "1234567",
+//   pnlDayPct: "0.0082",
+//   updatedAt: new Date().toISOString(),
+// };
 
-const MOCK_POS: Position[] = [
-  { symbol: "005930.KS", name: "삼성전자", qty: "15", avgPrice: "78100", lastPrice: "79200", pnl: "16500", pnlPct: "0.0142" },
-  { symbol: "000660.KS", name: "SK하이닉스", qty: "3", avgPrice: "195000", lastPrice: "192500", pnl: "-7500", pnlPct: "-0.0128" },
-];
+// const MOCK_POS: Position[] = [
+//   { symbol: "005930.KS", name: "삼성전자", qty: "15", avgPrice: "78100", lastPrice: "79200", pnl: "16500", pnlPct: "0.0142" },
+//   { symbol: "000660.KS", name: "SK하이닉스", qty: "3", avgPrice: "195000", lastPrice: "192500", pnl: "-7500", pnlPct: "-0.0128" },
+// ];
 
 /** ---------- 유틸 ---------- */
 function Money({ v }: { v: string }) {
@@ -153,14 +155,30 @@ export default function Home() {
   const scheme = useColorScheme();
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
-  const [pf, setPf] = useState<PortfolioSnapshot>(MOCK_PF);
-  const [positions, setPositions] = useState<Position[]>(MOCK_POS);
+  const [pf, setPf] = useState<PortfolioSnapshot | null>(null);
+  const [positions, setPositions] = useState<Position[]>([]);
 
-  const onRefresh = useCallback(() => {
+  
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    // 여기서 백엔드 연결 시 새로고침 로직
-    setTimeout(() => setRefreshing(false), 700);
+    try {
+      const [portfolioData, positionsData] = await Promise.all([
+        getPortfolio(),
+        getPositions(),
+      ]);
+      setPf(portfolioData);
+      setPositions(positionsData);
+    } catch (error) {
+      console.error("Failed to fetch data", error);
+    } finally {
+      setTimeout(() => setRefreshing(false), 700);
+    }
   }, []);
+
+  useEffect(() => {
+    onRefresh();
+  }, [onRefresh]);
 
   const bg = scheme === "dark" ? "#0b0f14" : "#fff";
 
@@ -169,7 +187,7 @@ export default function Home() {
       <FlatList
         ListHeaderComponent={
           <>
-            <EquityCard pf={pf} />
+            {pf ? <EquityCard pf={pf} /> : null}
             <QuickActions />
             <SectionHeader title="보유 종목" onPressMore={() => {}} />
           </>
