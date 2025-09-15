@@ -1,0 +1,12 @@
+fastapi
+matplotlib
+mplfinance
+numpy
+pandas
+psycopg2-binary
+sympy
+torch
+tqdm
+uvicorn
+pydantic
+./kiwoom_python-0.0.2a0-py3-none-any.whl
