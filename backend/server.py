@@ -17,8 +17,8 @@ UTC = ZoneInfo("UTC")
 
 # Create a FastAPI instance
 app = FastAPI()
-appkey = "CAJbpNofdEzBVpSC23SRRvkD8qxUxqJRjM5dagIp1PU"
-secretkey = "Sty0POpQV4Lk5OyfhKd09OzwCptnh9WQdgIfWlkpmTo"
+appkey = "*"
+secretkey = "*"
 api = KiwoomAPI(appkey, secretkey, mock=True)
 acnt = Account(api)
 
