@@ -1,19 +1,66 @@
 // app/trade/[symbol].tsx
+import { Feather } from "@expo/vector-icons";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  SafeAreaView,
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
+  Alert,
   KeyboardAvoidingView,
   Platform,
-  Alert,
+  SafeAreaView,
   ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { Feather } from "@expo/vector-icons";
+
+
+import { getChartData } from "@/lib/api/chart";
+import Chart from "../../components/Chart";
+import type { ChartDatum } from "../../lib/api/types";
+
+const rawData = [
+  {'timestamp': 1703689200, 'open': 77700.0, 'high': 78500.0, 'low': 77500.0, 'close': 78500.0},
+  {'timestamp': 1703602800, 'open': 76700.0, 'high': 78000.0, 'low': 76500.0, 'close': 78000.0},
+  {'timestamp': 1703516400, 'open': 76100.0, 'high': 76700.0, 'low': 75700.0, 'close': 76600.0},
+  {'timestamp': 1703170800, 'open': 75800.0, 'high': 76300.0, 'low': 75400.0, 'close': 75900.0},
+  {'timestamp': 1703084400, 'open': 74600.0, 'high': 75000.0, 'low': 74300.0, 'close': 75000.0},
+  {'timestamp': 1702998000, 'open': 74200.0, 'high': 74900.0, 'low': 73800.0, 'close': 74800.0},
+  {'timestamp': 1702911600, 'open': 73000.0, 'high': 73400.0, 'low': 72800.0, 'close': 73400.0},
+  {'timestamp': 1702825200, 'open': 73300.0, 'high': 73400.0, 'low': 72800.0, 'close': 72900.0},
+  {'timestamp': 1702566000, 'open': 73800.0, 'high': 74000.0, 'low': 73200.0, 'close': 73300.0},
+  {'timestamp': 1702479600, 'open': 74100.0, 'high': 74300.0, 'low': 72500.0, 'close': 73100.0},
+  {'timestamp': 1702393200, 'open': 73300.0, 'high': 73500.0, 'low': 72800.0, 'close': 72800.0},
+  {'timestamp': 1702306800, 'open': 73300.0, 'high': 73500.0, 'low': 73100.0, 'close': 73500.0},
+  {'timestamp': 1702220400, 'open': 72800.0, 'high': 73000.0, 'low': 72200.0, 'close': 73000.0},
+  {'timestamp': 1701961200, 'open': 72100.0, 'high': 72800.0, 'low': 71900.0, 'close': 72600.0},
+  {'timestamp': 1701874800, 'open': 71800.0, 'high': 71900.0, 'low': 71100.0, 'close': 71500.0},
+  {'timestamp': 1701788400, 'open': 71800.0, 'high': 72100.0, 'low': 71600.0, 'close': 71700.0},
+  {'timestamp': 1701702000, 'open': 72300.0, 'high': 72400.0, 'low': 71200.0, 'close': 71200.0},
+  {'timestamp': 1701615600, 'open': 72800.0, 'high': 72900.0, 'low': 72400.0, 'close': 72600.0},
+  {'timestamp': 1701356400, 'open': 72400.0, 'high': 72500.0, 'low': 71700.0, 'close': 72000.0},
+  {'timestamp': 1701270000, 'open': 72700.0, 'high': 72800.0, 'low': 72200.0, 'close': 72800.0},
+  {'timestamp': 1701183600, 'open': 72400.0, 'high': 72800.0, 'low': 72200.0, 'close': 72700.0},
+  {'timestamp': 1701097200, 'open': 71400.0, 'high': 72700.0, 'low': 71300.0, 'close': 72700.0},
+  {'timestamp': 1701010800, 'open': 71500.0, 'high': 72100.0, 'low': 71100.0, 'close': 71300.0},
+  {'timestamp': 1700751600, 'open': 72400.0, 'high': 72600.0, 'low': 71700.0, 'close': 71700.0},
+  {'timestamp': 1700665200, 'open': 73000.0, 'high': 73200.0, 'low': 72200.0, 'close': 72400.0},
+  {'timestamp': 1700578800, 'open': 72200.0, 'high': 73000.0, 'low': 71900.0, 'close': 72800.0},
+  {'timestamp': 1700492400, 'open': 73100.0, 'high': 73400.0, 'low': 72700.0, 'close': 72800.0},
+  {'timestamp': 1700406000, 'open': 72100.0, 'high': 73000.0, 'low': 72100.0, 'close': 72700.0},
+  {'timestamp': 1700146800, 'open': 72300.0, 'high': 73000.0, 'low': 72300.0, 'close': 72500.0},
+  {'timestamp': 1700060400, 'open': 72500.0, 'high': 73000.0, 'low': 72300.0, 'close': 72800.0},
+  {'timestamp': 1699974000, 'open': 71600.0, 'high': 72200.0, 'low': 71500.0, 'close': 72200.0},
+  {'timestamp': 1699887600, 'open': 71000.0, 'high': 71100.0, 'low': 70600.0, 'close': 70800.0},
+];
+const data: ChartDatum[] = rawData.map(d => ({
+  timestamp: d.timestamp * 1000,
+  open: d.open,
+  high: d.high,
+  low: d.low,
+  close: d.close,
+})); // ms 변환
 
 /** ---------- 타입 ---------- */
 type OrderSide = "BUY" | "SELL";
@@ -34,9 +81,13 @@ function signColor(x: number) {
 }
 
 /** ---------- 메인 ---------- */
+// const chartData = [{'timestamp': 1703689200, 'open': 77700.0, 'high': 78500.0, 'low': 77500.0, 'close': 78500.0}, {'timestamp': 1703602800, 'open': 76700.0, 'high': 78000.0, 'low': 76500.0, 'close': 78000.0}, {'timestamp': 1703516400, 'open': 76100.0, 'high': 76700.0, 'low': 75700.0, 'close': 76600.0}, {'timestamp': 1703170800, 'open': 75800.0, 'high': 76300.0, 'low': 75400.0, 'close': 75900.0}, {'timestamp': 1703084400, 'open': 74600.0, 'high': 75000.0, 'low': 74300.0, 'close': 75000.0}, {'timestamp': 1702998000, 'open': 74200.0, 'high': 74900.0, 'low': 73800.0, 'close': 74800.0}, {'timestamp': 1702911600, 'open': 73000.0, 'high': 73400.0, 'low': 72800.0, 'close': 73400.0}, {'timestamp': 1702825200, 'open': 73300.0, 'high': 73400.0, 'low': 72800.0, 'close': 72900.0}, {'timestamp': 1702566000, 'open': 73800.0, 'high': 74000.0, 'low': 73200.0, 'close': 73300.0}, {'timestamp': 1702479600, 'open': 74100.0, 'high': 74300.0, 'low': 72500.0, 'close': 73100.0}, {'timestamp': 1702393200, 'open': 73300.0, 'high': 73500.0, 'low': 72800.0, 'close': 72800.0}, {'timestamp': 1702306800, 'open': 73300.0, 'high': 73500.0, 'low': 73100.0, 'close': 73500.0}, {'timestamp': 1702220400, 'open': 72800.0, 'high': 73000.0, 'low': 72200.0, 'close': 73000.0}, {'timestamp': 1701961200, 'open': 72100.0, 'high': 72800.0, 'low': 71900.0, 'close': 72600.0}, {'timestamp': 1701874800, 'open': 71800.0, 'high': 71900.0, 'low': 71100.0, 'close': 71500.0}, {'timestamp': 1701788400, 'open': 71800.0, 'high': 72100.0, 'low': 71600.0, 'close': 71700.0}, {'timestamp': 1701702000, 'open': 72300.0, 'high': 72400.0, 'low': 71200.0, 'close': 71200.0}, {'timestamp': 1701615600, 'open': 72800.0, 'high': 72900.0, 'low': 72400.0, 'close': 72600.0}, {'timestamp': 1701356400, 'open': 72400.0, 'high': 72500.0, 'low': 71700.0, 'close': 72000.0}, {'timestamp': 1701270000, 'open': 72700.0, 'high': 72800.0, 'low': 72200.0, 'close': 72800.0}, {'timestamp': 1701183600, 'open': 72400.0, 'high': 72800.0, 'low': 72200.0, 'close': 72800.0}, {'timestamp': 1701097200, 'open': 72000.0, 'high': 72300.0, 'low': 71700.0, 'close': 72200.0}, {'timestamp': 1701010800, 'open': 71300.0, 'high': 71500.0, 'low': 71000.0, 'close': 71300.0}, {'timestamp': 1700751600, 'open': 71000.0, 'high': 71200.0, 'low': 70700.0, 'close': 71200.0}, {'timestamp': 1700665200, 'open': 70500.0, 'high': 70800.0, 'low': 70300.0, 'close': 70700.0}, {'timestamp': 1700578800, 'open': 70600.0, 'high': 70800.0, 'low': 70400.0, 'close': 70500.0}, {'timestamp': 1700492400, 'open': 72500.0, 'high': 72800.0, 'low': 72300.0, 'close': 72700.0}, {'timestamp': 1700406000, 'open': 72800.0, 'high': 73000.0, 'low': 72500.0, 'close': 72800.0}, {'timestamp': 1700146800, 'open': 72300.0, 'high': 72500.0, 'low': 72100.0, 'close': 72200.0}, {'timestamp': 1700060400, 'open': 72200.0, 'high': 72400.0, 'low': 72000.0, 'close': 72200.0}, {'timestamp': 1699974000, 'open': 72200.0, 'high': 72300.0, 'low': 71500.0, 'close': 72000.0}, {'timestamp': 1699887600, 'open': 70800.0, 'high': 71000.0, 'low': 70600.0, 'close': 70900.0}, {'timestamp': 1699801200, 'open': 70800.0, 'high': 71000.0, 'low': 70500.0, 'close': 70600.0}, {'timestamp': 1699542000, 'open': 70300.0, 'high': 70500.0, 'low': 69800.0, 'close': 70100.0}, {'timestamp': 1699455600, 'open': 69600.0, 'high': 70000.0, 'low': 69500.0, 'close': 69700.0}, {'timestamp': 1699369200, 'open': 70900.0, 'high': 71000.0, 'low': 70500.0, 'close': 70600.0}, {'timestamp': 1699282800, 'open': 70200.0, 'high': 70500.0, 'low': 69800.0, 'close': 70500.0}, {'timestamp': 1699196400, 'open': 69700.0, 'high': 69800.0, 'low': 69300.0, 'close': 69500.0}, {'timestamp': 1698937200, 'open': 68600.0, 'high': 69600.0, 'low': 68500.0, 'close': 69600.0}, {'timestamp': 1698850800, 'open': 68000.0, 'high': 68400.0, 'low': 67800.0, 'close': 68300.0}, {'timestamp': 1698764400, 'open': 67300.0, 'high': 67900.0, 'low': 67300.0, 'close': 67800.0}, {'timestamp': 1698678000, 'open': 67600.0, 'high': 67800.0, 'low': 67300.0, 'close': 67300.0}, {'timestamp': 1698332400, 'open': 67000.0, 'high': 67500.0, 'low': 66800.0, 'close': 67500.0}, {'timestamp': 1698246000, 'open': 67000.0, 'high': 67300.0, 'low': 66700.0, 'close': 67000.0}, {'timestamp': 1698159600, 'open': 68000.0, 'high': 68300.0, 'low': 67800.0, 'close': 68000.0}, {'timestamp': 1698073200, 'open': 68900.0, 'high': 69000.0, 'low': 68300.0, 'close': 68300.0}, {'timestamp': 1697727600, 'open': 69500.0, 'high': 69600.0, 'low': 68800.0, 'close': 69000.0}, {'timestamp': 1697641200, 'open': 70000.0, 'high': 70000.0, 'low': 69200.0, 'close': 69200.0}, {'timestamp': 1697554800, 'open': 69300.0, 'high': 69800.0, 'low': 69100.0, 'close': 69800.0}];
 export default function SymbolDetailScreen() {
   const { symbol, name } = useLocalSearchParams<{ symbol: string; name?: string }>();
   const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
+  const [crt, setChart] = useState<ChartDatum[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // 임시: 틱커 모킹
   const [quote, setQuote] = useState<Quote>({
@@ -45,6 +96,7 @@ export default function SymbolDetailScreen() {
     price: 79200,
     changePct: 0.0142,
   });
+
 
   useEffect(() => {
     // 더미 실시간: 1초마다 ±변동
@@ -60,13 +112,20 @@ export default function SymbolDetailScreen() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    setLoading(true);
+    getChartData(symbol ?? "005963", "1D", "2025-01-01", 30)
+      .then(setChart)
+      .finally(() => setLoading(false));
+  }, [symbol]);
+  
   return (
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <ScrollView contentContainerStyle={{ padding: 16 }}>
           <Header quote={quote} onBack={() => router.back()} />
 
-          <ChartPlaceholder />
+          <Chart data={crt} />
 
           <OrderPanel symbol={quote.symbol} lastPrice={quote.price} />
         </ScrollView>
@@ -95,29 +154,6 @@ function Header({ quote, onBack }: { quote: Quote; onBack: () => void }) {
         </View>
       </View>
       <View style={{ width: 24 }} />
-    </View>
-  );
-}
-
-/** ---------- 차트 플레이스홀더 ---------- */
-function ChartPlaceholder() {
-  return (
-    <View style={styles.chartCard}>
-      <View style={styles.chartTabs}>
-        {["1D", "1W", "1M", "3M", "1Y"].map((t, i) => (
-          <TouchableOpacity key={t} style={[styles.tab, i === 0 && styles.tabActive]}>
-            <Text style={[styles.tabText, i === 0 && styles.tabTextActive]}>{t}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <View style={styles.chartArea}>
-        <Text style={{ color: "#94a3b8" }}>여기에 캔들 차트를 붙이세요 (victory-native / skia)</Text>
-      </View>
-      <View style={styles.statRow}>
-        <Text style={styles.statKey}>고가</Text><Text style={styles.statVal}>80,100</Text>
-        <Text style={styles.statKey}>저가</Text><Text style={styles.statVal}>77,800</Text>
-        <Text style={styles.statKey}>거래량</Text><Text style={styles.statVal}>2,345,678</Text>
-      </View>
     </View>
   );
 }
