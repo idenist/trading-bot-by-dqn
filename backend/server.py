@@ -77,6 +77,7 @@ def get_positions():
     # ]
     ls = []
     for i in resp:
+        time.sleep(1)
         if i.remainder_quantity == 0:
             continue
         current_price = crt.get_stock_tick_chart(i.stock_code, True, 1, 1)[0].close
