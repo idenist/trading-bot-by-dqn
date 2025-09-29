@@ -1,19 +1,19 @@
 // app/(tabs)/index.tsx
 import { getPortfolio, getPositions } from "@/lib/api/portfolio";
 import { PortfolioSnapshot, Position } from "@/lib/api/types";
-import React, { useMemo, useState, useCallback, useEffect } from "react";
-import {
-  SafeAreaView,
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  RefreshControl,
-  useColorScheme,
-  TouchableOpacity,
-} from "react-native";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FlatList,
+  RefreshControl,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useColorScheme,
+  View,
+} from "react-native";
 
 /** ---------- 타입 (백엔드 붙일 때 그대로 교체) ---------- */
 // type Currency = "KRW" | "USD";

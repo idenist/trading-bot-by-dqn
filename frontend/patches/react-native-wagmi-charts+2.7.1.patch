@@ -1,0 +1,379 @@
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getDomain.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getDomain.js
+index 073c063..3ad0e0b 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getDomain.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getDomain.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.getDomain = getDomain;
+ function getDomain(rows) {
+   'worklet';
+ 
+@@ -15,4 +14,5 @@ function getDomain(rows) {
+   const max = Math.max(...values);
+   return [min - (max - min) * 0.025, max + (max - min) * 0.025];
+ }
++exports.getDomain = getDomain;
+ //# sourceMappingURL=getDomain.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getHeight.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getHeight.js
+index b1d3e44..eee4e9b 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getHeight.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getHeight.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.getHeight = getHeight;
+ var _reactNativeReanimated = require("react-native-reanimated");
+ function getHeight({
+   value,
+@@ -14,4 +13,5 @@ function getHeight({
+ 
+   return (0, _reactNativeReanimated.interpolate)(value, [0, Math.max(...domain) - Math.min(...domain)], [0, maxHeight], _reactNativeReanimated.Extrapolate.CLAMP);
+ }
++exports.getHeight = getHeight;
+ //# sourceMappingURL=getHeight.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getPrice.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getPrice.js
+index 1fc40df..d3e71a4 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getPrice.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getPrice.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.getPrice = getPrice;
+ var _reactNativeReanimated = require("react-native-reanimated");
+ function getPrice({
+   y,
+@@ -15,4 +14,5 @@ function getPrice({
+   if (y === -1) return -1;
+   return (0, _reactNativeReanimated.interpolate)(y, [0, maxHeight], domain.reverse(), _reactNativeReanimated.Extrapolate.CLAMP);
+ }
++exports.getPrice = getPrice;
+ //# sourceMappingURL=getPrice.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getY.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getY.js
+index d58b23b..83184e0 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getY.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/candle/utils/getY.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.getY = getY;
+ var _reactNativeReanimated = require("react-native-reanimated");
+ function getY({
+   value,
+@@ -14,4 +13,5 @@ function getY({
+ 
+   return (0, _reactNativeReanimated.interpolate)(value, domain, [maxHeight, 0], _reactNativeReanimated.Extrapolate.CLAMP);
+ }
++exports.getY = getY;
+ //# sourceMappingURL=getY.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getArea.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getArea.js
+index 465894f..8c95309 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getArea.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getArea.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.getArea = getArea;
+ var shape = _interopRequireWildcard(require("d3-shape"));
+ var _d3Scale = require("d3-scale");
+ function _getRequireWildcardCache(e) { if ("function" != typeof WeakMap) return null; var r = new WeakMap(), t = new WeakMap(); return (_getRequireWildcardCache = function (e) { return e ? t : r; })(e); }
+@@ -29,4 +28,5 @@ function getArea({
+   const area = shape.area().x((_, i) => scaleX(xDomain ? timestamps[i] ?? i : i)).y0(d => scaleY(d.value)).y1(() => height).curve(_shape)(data);
+   return area;
+ }
++exports.getArea = getArea;
+ //# sourceMappingURL=getArea.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getDomain.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getDomain.js
+index f707ffe..8f0e4e4 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getDomain.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getDomain.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.getDomain = getDomain;
+ function getDomain(rows) {
+   'worklet';
+ 
+@@ -12,4 +11,5 @@ function getDomain(rows) {
+   }) => value);
+   return [Math.min(...values), Math.max(...values)];
+ }
++exports.getDomain = getDomain;
+ //# sourceMappingURL=getDomain.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getPath.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getPath.js
+index b5856c9..60ac4f3 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getPath.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getPath.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.getPath = getPath;
+ var shape = _interopRequireWildcard(require("d3-shape"));
+ var _d3Scale = require("d3-scale");
+ function _getRequireWildcardCache(e) { if ("function" != typeof WeakMap) return null; var r = new WeakMap(), t = new WeakMap(); return (_getRequireWildcardCache = function (e) { return e ? t : r; })(e); }
+@@ -31,4 +30,5 @@ function getPath({
+   const path = shape.line().defined(d => from || to ? data.slice(from, to ? to + 1 : undefined).find(item => item.timestamp === d.timestamp) : true).x((_, i) => scaleX(xDomain ? timestamps[i] ?? i : i)).y(d => scaleY(d.value)).curve(_shape)(data);
+   return path;
+ }
++exports.getPath = getPath;
+ //# sourceMappingURL=getPath.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getXPositionForCurve.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getXPositionForCurve.js
+index d9bdf20..365c281 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getXPositionForCurve.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/getXPositionForCurve.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.getXPositionForCurve = getXPositionForCurve;
+ function getXPositionForCurve(path, index) {
+   'worklet';
+ 
+@@ -16,4 +15,5 @@ function getXPositionForCurve(path, index) {
+   }
+   return point.to.x;
+ }
++exports.getXPositionForCurve = getXPositionForCurve;
+ //# sourceMappingURL=getXPositionForCurve.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/interpolatePath.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/interpolatePath.js
+index 504ea82..31d276b 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/interpolatePath.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/interpolatePath.js
+@@ -3,10 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.interpolatePath = interpolatePath;
+-exports.interpolatePathCommands = interpolatePathCommands;
+-exports.pathCommandsFromString = pathCommandsFromString;
+-exports.splitCurve = splitCurve;
+ // @ts-nocheck
+ 
+ /**
+@@ -591,4 +587,8 @@ function interpolatePath(a, b, excludeSegment) {
+     return interpolatedString;
+   };
+ }
++exports.interpolatePath = interpolatePath;
++exports.interpolatePathCommands = interpolatePathCommands;
++exports.pathCommandsFromString = pathCommandsFromString;
++exports.splitCurve = splitCurve;
+ //# sourceMappingURL=interpolatePath.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/lineChartDataPropToArray.js b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/lineChartDataPropToArray.js
+index bef364d..9f33fa7 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/lineChartDataPropToArray.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/charts/line/utils/lineChartDataPropToArray.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.lineChartDataPropToArray = lineChartDataPropToArray;
+ function lineChartDataPropToArray(dataProp) {
+   'worklet';
+ 
+@@ -21,4 +20,5 @@ function lineChartDataPropToArray(dataProp) {
+   });
+   return data;
+ }
++exports.lineChartDataPropToArray = lineChartDataPropToArray;
+ //# sourceMappingURL=lineChartDataPropToArray.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/utils/formatDatetime.js b/node_modules/react-native-wagmi-charts/lib/commonjs/utils/formatDatetime.js
+index d8f1334..90cf1b4 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/utils/formatDatetime.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/utils/formatDatetime.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.formatDatetime = formatDatetime;
+ /**
+  * @worklet
+  */
+@@ -17,4 +16,5 @@ function formatDatetime({
+   const d = new Date(value);
+   return d.toLocaleString(locale, options);
+ }
++exports.formatDatetime = formatDatetime;
+ //# sourceMappingURL=formatDatetime.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/utils/formatPrice.js b/node_modules/react-native-wagmi-charts/lib/commonjs/utils/formatPrice.js
+index 4730c0c..7ddd48a 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/utils/formatPrice.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/utils/formatPrice.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.formatPrice = formatPrice;
+ /**
+  * @worklet
+  */
+@@ -33,4 +32,5 @@ function formatPrice({
+   }
+   return res;
+ }
++exports.formatPrice = formatPrice;
+ //# sourceMappingURL=formatPrice.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/lib/commonjs/utils/usePrevious.js b/node_modules/react-native-wagmi-charts/lib/commonjs/utils/usePrevious.js
+index 40623da..c3fc4d2 100644
+--- a/node_modules/react-native-wagmi-charts/lib/commonjs/utils/usePrevious.js
++++ b/node_modules/react-native-wagmi-charts/lib/commonjs/utils/usePrevious.js
+@@ -3,7 +3,6 @@
+ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+-exports.usePrevious = usePrevious;
+ var React = _interopRequireWildcard(require("react"));
+ function _getRequireWildcardCache(e) { if ("function" != typeof WeakMap) return null; var r = new WeakMap(), t = new WeakMap(); return (_getRequireWildcardCache = function (e) { return e ? t : r; })(e); }
+ function _interopRequireWildcard(e, r) { if (!r && e && e.__esModule) return e; if (null === e || "object" != typeof e && "function" != typeof e) return { default: e }; var t = _getRequireWildcardCache(r); if (t && t.has(e)) return t.get(e); var n = { __proto__: null }, a = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var u in e) if ("default" !== u && {}.hasOwnProperty.call(e, u)) { var i = a ? Object.getOwnPropertyDescriptor(e, u) : null; i && (i.get || i.set) ? Object.defineProperty(n, u, i) : n[u] = e[u]; } return n.default = e, t && t.set(e, n), n; }
+@@ -18,4 +17,5 @@ function usePrevious(value) {
+   // Return previous value (happens before update in useEffect above)
+   return ref.current;
+ }
++exports.usePrevious = usePrevious;
+ //# sourceMappingURL=usePrevious.js.map
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getDomain.ts b/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getDomain.ts
+index b0c0126..c290041 100644
+--- a/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getDomain.ts
++++ b/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getDomain.ts
+@@ -1,9 +1,10 @@
+ import type { TCandle } from '../types';
+ 
+-export function getDomain(rows: TCandle[]): [min: number, max: number] {
++function getDomain(rows: TCandle[]): [min: number, max: number] {
+   'worklet';
+   const values = rows.map(({ high, low }) => [high, low]).flat();
+   const min = Math.min(...values);
+   const max = Math.max(...values);
+   return [min - (max - min) * 0.025, max + (max - min) * 0.025];
+ }
++exports.getDomain = getDomain;
+diff --git a/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getHeight.ts b/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getHeight.ts
+index 96c3b9e..9a2489e 100644
+--- a/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getHeight.ts
++++ b/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getHeight.ts
+@@ -1,8 +1,8 @@
+-import { interpolate, Extrapolate } from 'react-native-reanimated';
++import { Extrapolate, interpolate } from 'react-native-reanimated';
+ 
+ import type { TDomain } from '../types';
+ 
+-export function getHeight({
++function getHeight({
+   value,
+   domain,
+   maxHeight,
+@@ -19,3 +19,4 @@ export function getHeight({
+     Extrapolate.CLAMP
+   );
+ }
++exports.getHeight = getHeight;
+diff --git a/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getPrice.ts b/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getPrice.ts
+index a536955..751ce17 100644
+--- a/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getPrice.ts
++++ b/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getPrice.ts
+@@ -1,8 +1,8 @@
+-import { interpolate, Extrapolate } from 'react-native-reanimated';
++import { Extrapolate, interpolate } from 'react-native-reanimated';
+ 
+ import type { TDomain } from '../types';
+ 
+-export function getPrice({
++function getPrice({
+   y,
+   domain,
+   maxHeight,
+@@ -15,3 +15,4 @@ export function getPrice({
+   if (y === -1) return -1;
+   return interpolate(y, [0, maxHeight], domain.reverse(), Extrapolate.CLAMP);
+ }
++exports.getPrice = getPrice;
+diff --git a/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getY.ts b/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getY.ts
+index d0ec57f..e5d9e0f 100644
+--- a/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getY.ts
++++ b/node_modules/react-native-wagmi-charts/src/charts/candle/utils/getY.ts
+@@ -1,4 +1,4 @@
+-import { interpolate, Extrapolate } from 'react-native-reanimated';
++import { Extrapolate, interpolate } from 'react-native-reanimated';
+ 
+ import type { TDomain } from '../types';
+ 
+@@ -14,3 +14,4 @@ export function getY({
+   'worklet';
+   return interpolate(value, domain, [maxHeight, 0], Extrapolate.CLAMP);
+ }
++exports.getY = getY;
+\ No newline at end of file
+diff --git a/node_modules/react-native-wagmi-charts/src/utils/formatDatetime.ts b/node_modules/react-native-wagmi-charts/src/utils/formatDatetime.ts
+index bb2214c..2a208eb 100644
+--- a/node_modules/react-native-wagmi-charts/src/utils/formatDatetime.ts
++++ b/node_modules/react-native-wagmi-charts/src/utils/formatDatetime.ts
+@@ -1,7 +1,7 @@
+ /**
+  * @worklet
+  */
+-export function formatDatetime({
++function formatDatetime({
+   value,
+   locale = 'en-US',
+   options = {},
+@@ -14,3 +14,4 @@ export function formatDatetime({
+   const d = new Date(value);
+   return d.toLocaleString(locale, options);
+ }
++export { formatDatetime };
+diff --git a/node_modules/react-native-wagmi-charts/src/utils/formatPrice.ts b/node_modules/react-native-wagmi-charts/src/utils/formatPrice.ts
+index 33d43b0..55a469e 100644
+--- a/node_modules/react-native-wagmi-charts/src/utils/formatPrice.ts
++++ b/node_modules/react-native-wagmi-charts/src/utils/formatPrice.ts
+@@ -1,7 +1,7 @@
+ /**
+  * @worklet
+  */
+-export function formatPrice({
++function formatPrice({
+   value: _value,
+   defaultPrice: _defaultPrice = '',
+   precision,
+@@ -38,3 +38,5 @@ export function formatPrice({
+   }
+   return res;
+ }
++
++export { formatPrice };
+diff --git a/node_modules/react-native-wagmi-charts/src/utils/usePrevious.ts b/node_modules/react-native-wagmi-charts/src/utils/usePrevious.ts
+index 7d783a2..d8feded 100644
+--- a/node_modules/react-native-wagmi-charts/src/utils/usePrevious.ts
++++ b/node_modules/react-native-wagmi-charts/src/utils/usePrevious.ts
+@@ -1,6 +1,6 @@
+ import * as React from 'react';
+ 
+-export function usePrevious<T>(value: T) {
++function usePrevious<T>(value: T) {
+   // The ref object is a generic container whose current property is mutable ...
+   // ... and can hold any value, similar to an instance property on a class
+   const ref = React.useRef<T>();
+@@ -11,3 +11,4 @@ export function usePrevious<T>(value: T) {
+   // Return previous value (happens before update in useEffect above)
+   return ref.current;
+ }
++export { usePrevious };

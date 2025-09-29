@@ -10,17 +10,19 @@ from pydantic import BaseModel
 from enum import Enum
 from datetime import datetime
 from zoneinfo import ZoneInfo
-
+from dotenv import load_dotenv
+import os
 
 UTC = ZoneInfo("UTC")
 
-
 # Create a FastAPI instance
 app = FastAPI()
-appkey = "*"
-secretkey = "*"
+load_dotenv()  # .env 파일 불러오기
+appkey = os.getenv("APP_KEY")
+secretkey = os.getenv("SECRET_KEY")
 api = KiwoomAPI(appkey, secretkey, mock=True)
 acnt = Account(api)
+chart = Chart(api)
 
 
 # Pydantic model for data validation in POST request
@@ -52,9 +54,17 @@ class PositionRequest(BaseModel):
     symbol: str
 
 
+class ChartRequest(BaseModel):
+    symbol: str
+    base_date: str
+    interval: str
+    amount: int
+
+
 origins = [
     "http://localhost",
-    "http://localhost:8081"
+    "http://localhost:8081",
+    "http://192.168.0.5:8081"
 ]
 
 # Add the CORS middleware to your app
@@ -108,3 +118,18 @@ def get_portfolio():
         updatedAt=datetime.now().astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S") + "Z"
     )
     return pf
+
+@app.post("/chart/")
+def get_chart(chart_request: ChartRequest):
+    print(chart_request.interval)
+    if chart_request.interval == "1D":
+        resp = chart.get_stock_daily_chart(chart_request.symbol, chart_request.base_date, True, amount=chart_request.amount)
+    elif chart_request.interval == "1W":
+        resp = chart.get_stock_weekly_chart(chart_request.symbol, chart_request.base_date, True, amount=chart_request.amount)
+    elif chart_request.interval == "1M":
+        resp = chart.get_stock_monthly_chart(chart_request.symbol, chart_request.base_date, True, amount=chart_request.amount)
+    else:
+        raise HTTPException(status_code=422, detail=f"Unknown interval {chart_request.interval}")
+    ret = [x.to_minimal_dict() for x in resp][-1:-chart_request.amount - 1:-1]
+    return ret
+

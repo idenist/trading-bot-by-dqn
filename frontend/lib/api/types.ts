@@ -20,3 +20,15 @@ export type Position = {
 };
 
 export type Ticker = { symbol: string; price: string; ts: number };
+
+export type ChartDatum = {
+  timestamp: number; // Unix timestamp in milliseconds
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+};
+
+export type ChartProps = {
+  data: ChartDatum[];
+}
