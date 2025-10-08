@@ -5,8 +5,5 @@ pandas
 yfinance
 ta
 torch
-<<<<<<< HEAD
-./kiwoom_python-0.1.1-py3-none-any.whl
-=======
+dotenv
 ./kiwoom_python-0.1.2-py3-none-any.whl
->>>>>>> d5b3beac3bf7bda0f82a975575c218d620c81f51

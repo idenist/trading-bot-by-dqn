@@ -8,7 +8,7 @@
       ]
     },
     "jsx": "react-jsx",   // React 17+ 일 때
-    "types": ["react", "react-native"],
+    "types": ["expo", "expo-router", "react", "react-native"],
     "skipLibCheck": true
   },
   "include": [

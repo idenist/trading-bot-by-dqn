@@ -1,0 +1,9 @@
+{
+  "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
+    "expo-router": "~6.0.10",
+    "expo-secure-store": "^15.0.7",
+    "react-hook-form": "^7.64.0",
+    "zod": "^3.25.76"
+  }
+}
