@@ -6,6 +6,7 @@ from kiwoom_python.model import AccountEntry
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from contextlib import asynccontextmanager
 
 from enum import Enum
 from datetime import datetime
@@ -75,6 +76,10 @@ app.add_middleware(
     allow_headers=["*"], # Allows all headers
 )
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await kiwoom_manager.run()
+    yield
 
 # POST request handler
 @app.get("/positions")
@@ -131,3 +136,41 @@ def get_chart(chart_request: ChartRequest):
     ret = [x.to_minimal_dict() for x in resp][-1:-chart_request.amount - 1:-1]
     return ret
 
+from fastapi import FastAPI, Request
+from sse_starlette.sse import EventSourceResponse
+from kiwoom_python.realtime_subscription import KiwoomDataManager
+import asyncio
+
+# ⭐️ app_key와 secret_key는 환경 변수 등 안전한 방식으로 관리해야 합니다.
+app = FastAPI()
+
+# ⭐️ 싱글톤 인스턴스 생성
+kiwoom_manager = KiwoomDataManager(api)
+
+@app.get("/sse")
+async def sse_endpoint(request: Request, items: str):
+    # 클라이언트가 쿼리 파라미터로 원하는 종목을 보냄 (예: /sse?items=005930,000660)
+    requested_items = items.split(',')
+    client_id = id(request) # 클라이언트 식별자
+
+    # ⭐️ 각 클라이언트의 요청을 DataManager에 등록
+    for item in requested_items:
+        await kiwoom_manager.add_subscriber(client_id, item)
+
+    async def event_generator():
+        try:
+            while True:
+                # ⭐️ DataManager의 큐에서 새로운 데이터가 들어오기를 기다림
+                data = await kiwoom_manager.data_queue.get()
+                item_code = data.get('item', {}).get('code')
+                
+                # ⭐️ 요청한 종목의 데이터인지 확인 후 전송
+                if item_code and item_code in requested_items:
+                    yield {"event": "realtime_update", "data": json.dumps(data)}
+                
+        finally:
+            # ⭐️ 클라이언트 연결이 끊기면 구독 해지
+            for item in requested_items:
+                await kiwoom_manager.remove_subscriber(client_id, item)
+
+    return EventSourceResponse(event_generator())

@@ -5,4 +5,5 @@ pandas
 yfinance
 ta
 torch
-./kiwoom_python-0.1.2-py3-none-any.whl
+./kiwoom_python-0.2.1a-py3-none-any.whl
+sse-starlette
