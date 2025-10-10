@@ -52,11 +52,13 @@ import {
 
 /** ---------- 유틸 ---------- */
 function Money({ v }: { v: string }) {
+  let color;
   const txt = useMemo(() => {
     const n = Number(v);
     if (Number.isNaN(n)) return v;
     return n.toLocaleString();
   }, [v]);
+  
   return <Text>{txt}</Text>;
 }
 
@@ -87,13 +89,8 @@ function EquityCard({ pf }: { pf: PortfolioSnapshot }) {
       <Text style={styles.muted}>총자산</Text>
       <Text style={styles.equity}><Money v={pf.totalEquity} /> {pf.currency}</Text>
 
-      <View style={styles.row}>
-        <Text style={styles.muted}>현금 </Text>
-        <Text><Money v={pf.cash} /> {pf.currency}</Text>
-      </View>
-
       <View style={[styles.row, { marginTop: 6 }]}>
-        <Text style={styles.muted}>일손익 </Text>
+        <Text style={styles.muted}>총손익 </Text>
         <Text style={{ fontWeight: "700" }}>
           <Money v={pf.pnlDay} /> (<Pct v={pf.pnlDayPct} />)
         </Text>
