@@ -159,7 +159,16 @@ function Header({ quote, onBack }: { quote: Quote; onBack: () => void }) {
 }
 
 /** ---------- 주문 패널 ---------- */
-function OrderPanel({ symbol, lastPrice }: { symbol: string; lastPrice: number }) {
+
+function OrderPanel({
+  symbol,
+  lastPrice,
+  onAutoTrade,
+}: {
+  symbol: string;
+  lastPrice: number;
+  onAutoTrade?: (symbol: string) => void;
+}) {
   const [side, setSide] = useState<OrderSide>("BUY");
   const [type, setType] = useState<OrderType>("LIMIT");
   const [price, setPrice] = useState(String(lastPrice));
@@ -273,6 +282,16 @@ function OrderPanel({ symbol, lastPrice }: { symbol: string; lastPrice: number }
           activeOpacity={0.8}
         >
           <Text style={styles.submitText}>{side === "BUY" ? "매수 주문" : "매도 주문"}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.autoBtn}
+          onPress={() =>
+            onAutoTrade ? onAutoTrade(symbol) : Alert.alert("자동 매매", "봇 관리 화면으로 연결하세요.")
+          }
+          activeOpacity={0.85}
+        >
+          <Text style={styles.autoBtnText}>자동 매매</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -461,4 +480,13 @@ const styles = StyleSheet.create({
   buyBtn: { backgroundColor: "#16a34a" },
   sellBtn: { backgroundColor: "#dc2626" },
   submitText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+  autoBtn: {
+  borderRadius: 12,
+  paddingVertical: 14,
+  alignItems: "center",
+  marginTop: 10,                 // 제출 버튼과 간격
+  backgroundColor: "#0ea5e9",    // 파란 계열(원하면 바꾸세요)
+},
+autoBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+
 });

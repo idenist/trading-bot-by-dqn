@@ -11,15 +11,16 @@ from contextlib import asynccontextmanager
 from enum import Enum
 from datetime import datetime
 from zoneinfo import ZoneInfo
-
+from dotenv import load_dotenv
+import os
 
 UTC = ZoneInfo("UTC")
 
-
 # Create a FastAPI instance
 app = FastAPI()
-appkey = "CAJbpNofdEzBVpSC23SRRvkD8qxUxqJRjM5dagIp1PU"
-secretkey = "Sty0POpQV4Lk5OyfhKd09OzwCptnh9WQdgIfWlkpmTo"
+load_dotenv()  # .env 파일 불러오기
+appkey = os.getenv("APP_KEY")
+secretkey = os.getenv("SECRET_KEY")
 api = KiwoomAPI(appkey, secretkey, mock=True)
 acnt = Account(api)
 chart = Chart(api)
@@ -91,6 +92,7 @@ def get_positions():
     # ]
     ls = []
     for i in resp:
+        time.sleep(1)
         if i.remainder_quantity == 0:
             continue
         current_price = crt.get_stock_tick_chart(i.stock_code, True, 1, 1)[0].close
