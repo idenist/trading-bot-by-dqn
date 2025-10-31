@@ -8,3 +8,5 @@ torch
 dotenv
 ./kiwoom_python-0.2.1a-py3-none-any.whl
 sse-starlette
+itsdangerous
+bcrypt>=5.0.0
