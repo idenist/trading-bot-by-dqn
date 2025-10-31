@@ -1,15 +1,26 @@
+// lib/api/client.ts
 import axios from "axios";
+import { getAccessToken } from "./auth";
 
-// .env 설정: EXPO_PUBLIC_API_BASE=https://your-fastapi.example.com
 export const api = axios.create({
   baseURL: process.env.EXPO_PUBLIC_API_BASE,
   timeout: 15000,
 });
 
-// 요청/응답 인터셉터(토큰 등)
-api.interceptors.request.use(async (config) => {
-  // TODO: 토큰 보관 시 MMKV에서 꺼내기
-  // const token = ...
-  // if (token) config.headers.Authorization = `Bearer ${token}`;
-  return config;
-});
+// 요청 인터셉터 - 토큰 추가
+api.interceptors.request.use(
+  async (config) => {
+    try {
+      const token = await getAccessToken();
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    } catch (error) {
+      console.error("토큰 가져오기 실패:", error);
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
