@@ -21,4 +21,4 @@ ECHO Starting Uvicorn server...
 ECHO Command: uvicorn server:app --host 0.0.0.0 --reload
 ECHO You can stop the server by pressing CTRL+C.
 
-start "Uvicorn Server" uvicorn server:app --host 0.0.0.0 --reload
+start "Uvicorn Server" uvicorn rest_server:app --host 0.0.0.0 --reload
