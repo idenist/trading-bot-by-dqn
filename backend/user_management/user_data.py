@@ -23,7 +23,11 @@ class User(BaseModel):
     is_verified: bool = False
     user_name: str | None = None
 
-class UserRegistration(BaseModel):
+class UserAuthData(BaseModel):
     """user registration data structure"""
     email: str
     password: str
+
+class Token(BaseModel):
+    """JWT token structure"""
+    token: str

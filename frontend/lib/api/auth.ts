@@ -1,39 +1,30 @@
-// lib/storage.ts
-import * as SecureStore from 'expo-secure-store';
-import { Platform } from 'react-native';
+import { api } from "@/lib/api/client";
+import { getItem, setItem, deleteItem } from "@/lib/storage";
 
-export async function getItem(key: string): Promise<string | null> {
+export type AuthResp = { accessToken: string; refreshToken?: string };
+
+export async function loginApi(body:{email:string; password:string}) {
+  const { data } = await api.post<AuthResp>("/auth/login", body);
+  await setItem("accessToken", data.accessToken);
+  if (data.refreshToken) await setItem("refreshToken", data.refreshToken);
+  return data;
+}
+
+export async function registerApi(body: { email: string; password: string }): Promise<void> {
+  await api.post("/auth/register", body);
+}
+
+export async function logoutApi() {
   try {
-    if (Platform.OS === 'web') {
-      return localStorage.getItem(key);
-    }
-    return await SecureStore.getItemAsync(key);
-  } catch (e) {
-    console.error('getItem error:', e);
-    return null;
+    await api.get("/auth/logout");
+  } catch (error) {
+    console.error("Failed to logout from server", error);
+  } finally {
+    await deleteItem("accessToken");
+    await deleteItem("refreshToken");
   }
 }
 
-export async function setItem(key: string, value: string): Promise<void> {
-  try {
-    if (Platform.OS === 'web') {
-      localStorage.setItem(key, value);
-    } else {
-      await SecureStore.setItemAsync(key, value);
-    }
-  } catch (e) {
-    console.error('setItem error:', e);
-  }
-}
-
-export async function deleteItem(key: string): Promise<void> {
-  try {
-    if (Platform.OS === 'web') {
-      localStorage.removeItem(key);
-    } else {
-      await SecureStore.deleteItemAsync(key);
-    }
-  } catch (e) {
-    console.error('deleteItem error:', e);
-  }
+export async function getAccessToken() {
+  return getItem("accessToken");
 }

@@ -3,14 +3,15 @@ from kiwoom_python.endpoints.account import *
 from kiwoom_python.endpoints.chart import Chart
 from kiwoom_python.model import AccountEntry
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
 from enum import Enum
-from datetime import datetime
-from zoneinfo import ZoneInfo
+import datetime
 from dotenv import load_dotenv
 load_dotenv()  # .env 파일 불러오기
 import os
@@ -21,6 +22,13 @@ import asyncio
 
 from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
+from psycopg import errors as pg_errors
+
+
+# ===================================================
+# 디버그용 파라미터
+# ===================================================
+VERIFY_SESSION = True
 
 # ===================================================
 # 데이터베이스 연결 설정
@@ -29,25 +37,23 @@ DB_CONNECT_STRING = os.getenv("DB_CONNECT_STRING")
 
 # 전역 변수로 커넥션 풀을 관리
 # AsyncConnectionPool: psycopg 3 비동기 커넥션 풀
-pool = AsyncConnectionPool(
-    conninfo=DB_CONNECT_STRING,
-    min_size=2,
-    max_size=5,
-)
+# NOTE: don't instantiate the pool at import time. Create it on app startup to avoid
+# the deprecation warning about opening the pool in the constructor.
+pool = None
 
 # --- 3. 의존성 주입 (Dependency Injection) ---
 # 각 API 요청에 대해 데이터베이스 연결을 제공하고,
 # 요청이 완료되면 연결을 풀에 자동으로 반환하는 함수입니다.
-async def get_db():
+async def get_db() -> AsyncConnectionPool.connection:
     async with pool.connection() as conn:
         try:
             conn.row_factory = dict_row
             yield conn
-        except Exception as e:
-            print(f"데이터베이스 연결 또는 작업 오류: {e}", file=sys.stderr)
+        except pg_errors.DatabaseError as e:
+            print(f"데이터베이스 오류: {e}", file=sys.stderr)
             raise HTTPException(status_code=500, detail="Database error")
 
-UTC = ZoneInfo("UTC")
+UTC = datetime.timezone.utc
 
 
 # Pydantic model for data validation in POST request
@@ -89,24 +95,31 @@ class ChartRequest(BaseModel):
 origins = [
     "http://localhost",
     "http://localhost:8081",
-    "http://192.168.0.5:8081"
+    "http://192.168.0.5:8081",
+    "http://100.*:8081"
 ]
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global pool
     try:
-        # 앱이 시작될 때 커넥션 풀을 열고 연결을 생성합니다.
+        # 앱이 시작될 때 풀 객체를 생성하고 명시적으로 연다.
+        pool = AsyncConnectionPool(
+            conninfo=DB_CONNECT_STRING,
+            min_size=2,
+            max_size=5,
+        )
         await pool.open()
         yield
-        # 'yield' 이후는 앱 종료 시 실행됩니다.
     finally:
         print("🛑 FastAPI 앱 종료... 커넥션 풀을 닫습니다.")
         # 앱이 종료될 때 모든 연결을 안전하게 닫습니다.
-        await pool.close()
-    yield
+        if pool is not None:
+            await pool.close()
 
 # Create a FastAPI instance
 app = FastAPI(lifespan=lifespan)
+security = HTTPBearer()
 appkey = os.getenv("APP_KEY")
 secretkey = os.getenv("SECRET_KEY")
 api = KiwoomAPI(appkey, secretkey, mock=True)
@@ -122,9 +135,58 @@ app.add_middleware(
     allow_headers=["*"], # Allows all headers
 )
 
+# ===================================================
+# 유저 관리
+# ===================================================
+from user_management.user_data import *
+# 이메일 인증 요청 처리
+from user_management.email_verification import *
+from user_management.session_manager import *
+from user_management.user_repository import *
+
+# TODO: 가입 절차를 (생성 -> 인증 메일 발송 -> 업데이트) 에서 (인증 메일 발송 -> 생성) 으로 간소화
+
+class VerificationRequest(BaseModel):
+    email: str
+
+class LoginResponse(BaseModel):
+    message: str
+    accessToken: str
+
+async def verify_jwt_token(db = Depends(get_db), credentials: HTTPAuthorizationCredentials = Depends(security)):
+    # 0. 디버그용; JWT의 유효성을 검사하지 않고 페이로드만 반환
+    if not VERIFY_SESSION:
+        token = credentials.credentials
+        is_vaild, payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'], options={"verify_exp": False})
+        return True, payload
+    # 1. 헤더에서 토큰 추출
+    token = credentials.credentials
+    # 2. 토큰 복호화 및 검증
+    is_valid, payload = verify_jwt(token)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=payload
+        )
+    # 3. 토큰 버전 쿼리
+    email = payload["email"]
+    session_token_version = payload["token_version"]
+    result = await fetch_user_by_email(db, email)
+    current_token_version = result["token_version"]
+    # 4. 토큰 버전 비교
+    if int(session_token_version) != current_token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token has been invalidated, {type(session_token_version)} vs {type(current_token_version)}"
+        )
+    return payload
+# ===================================================
+# API 엔드포인트
+
+
 # POST request handler
 @app.get("/positions")
-def get_positions():
+def get_positions(user=Depends(verify_jwt_token)):
     crt = Chart(api)
     resp = acnt.get_account_profit_rate()
     # positions: list[AccountEntry] = [
@@ -152,7 +214,7 @@ def get_positions():
 
 
 @app.get("/portfolio")
-def get_portfolio():
+def get_portfolio(user=Depends(verify_jwt_token)):
     resp = acnt.get_account_evaluation("KRX")
     pf = Portfolio(
         currency="KRW",
@@ -160,12 +222,12 @@ def get_portfolio():
         cash=str(resp.deposit),
         pnlDay=str(resp.daily_profit),
         pnlDayPct=str(resp.daily_profit_rate),
-        updatedAt=datetime.now().astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S") + "Z"
+        updatedAt=datetime.datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S") + "Z"
     )
     return pf
 
 @app.post("/chart/")
-def get_chart(chart_request: ChartRequest):
+def get_chart(chart_request: ChartRequest, user=Depends(verify_jwt_token)):
     print(chart_request.interval)
     if chart_request.interval == "1D":
         resp = chart.get_stock_daily_chart(chart_request.symbol, chart_request.base_date, True, amount=chart_request.amount)
@@ -178,38 +240,26 @@ def get_chart(chart_request: ChartRequest):
     ret = [x.to_minimal_dict() for x in resp][-1:-chart_request.amount - 1:-1]
     return ret
 
-# ===================================================
-# 유저 관리
-# ===================================================
-from user_management.user_data import *
-# 이메일 인증 요청 처리
-from user_management.email_verification import EmailVerifier, send_verification_email
 
-
-class VerificationRequest(BaseModel):
-    email: str
-
-@app.post("/auth/send_verification_email/")
-async def send_verification(data: VerificationRequest, db=Depends(get_db)):
+@app.post("/auth/register/")
+async def send_verification(data: UserAuthData, db=Depends(get_db)):
     email = data.email
     # 1. 이미 인증된 유저인지 검사
     # 1-1. 인증된 유저이면 에러 반환
     # 1-2. 인증된 유저가 아니면 이메일 인증
     try:
-        # 'db' 객체(연결)를 의존성 주입으로 받음
-        async with db.cursor() as cur:
-            await cur.execute("SELECT is_verified FROM users WHERE email = %s", (email,))
-            result = await cur.fetchone()
-            if result is not None and result["is_verified"]:
-                raise HTTPException(status_code=400, detail="User already verified")
+        if await is_user_exists(db, email):
+            print("User already exists")
+            raise HTTPException(status_code=400, detail="User already exists")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {e}")
     # 2. 이메일 인증 토큰 생성
     SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
     verifier = EmailVerifier(SECRET_KEY)
-    token = verifier.generate_token(email)
+    token = verifier.generate_token(data.model_dump())
     # 3. 인증 링크 생성
-    verification_link = f"http://localhost:8000/auth/verify/?token={token}"
+    backend_base_url = os.getenv("BACKEND_BASE_URL", "http://localhost:8000")
+    verification_link = f"{backend_base_url}/auth/verify/?token={token}"
     # 4. 이메일 발송
     email_sent = False
     counter = 0
@@ -222,79 +272,47 @@ async def send_verification(data: VerificationRequest, db=Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to send verification email")
     return {"message": "Verification email sent"}
 
-@app.get("/auth/verify/")
+@app.get("/auth/verify/", response_class=HTMLResponse)
 async def verify_email(token: str, db=Depends(get_db)):
     # 1. 토큰 검증
     SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
     verifier = EmailVerifier(SECRET_KEY)
-    is_valid = verifier.verify_token(token)  # 10분 유효
-    if not is_valid:
-        raise HTTPException(status_code=400, detail=f"Invalid or expired token")
-    email = verifier.get_email_from_token(token)
-    if email is None:
-        raise HTTPException(status_code=400, detail="Invalid token data")
-    # 2. 유저 인증 상태 업데이트
-    try:
-        async with db.cursor() as cur:
-            await cur.execute(
-                "UPDATE users SET is_verified = %s WHERE email = %s;",
-                (True, email)
-            )
-            await db.commit()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update user verification status: {e}")
-    return {"message": "Email verified successfully"}
+    data = verifier.verify_token(token)  # 10분 유효
+    if data is None:
+        return get_verification_state_page(False, msg="토큰이 만료되었습니다.")
+    if any(v is None for v in data.values()):
+        return get_verification_state_page(False, msg="토큰이 유효하지 않습니다.")
+    # 2. 이미 유저가 존재하는지 검사
+    if await is_user_exists(db, data['email']):
+        return get_verification_state_page(False, msg="이미 인증된 이메일입니다.")
+    # 3. 유저 생성
+    await create_user(db, data['email'], "user" + uuid.uuid4().hex[:8], PasswordProcessor().hash_password(data['password']))
+    return get_verification_state_page(True)
 
-@app.post("/auth/register/")
-async def register_user(user: UserRegistration, db=Depends(get_db)):
-    print(f"Registering user: {user.email}, {user.password}")
-    # 1. 이미 가입한 유저인지 확인
+@app.post("/auth/login/", response_model=LoginResponse)
+async def login_user(user: UserAuthData, db=Depends(get_db)):
+    # 1. 유저 정보 조회, 유저가 없는 경우는 fetch_user_by_email에서 예외 발생
     try:
-        async with db.cursor() as cur:
-            await cur.execute("SELECT 1 FROM users WHERE email=%s;", (user.email,))
-            result = await cur.fetchone()
-            if result is not None:
-                raise HTTPException(status_code=400, detail="User already registered")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Query failed: {e}")
-    # 2. 비밀번호 해싱
-    pwd_processor = PasswordProcessor()
-    hashed_password = pwd_processor.hash_password(user.password)
-    # 2-1 (임시: 사용자 이름 생성)
-    user_name = "user" + uuid.uuid4().hex[:8]
-    # 3. 유저 정보 저장
-    try:
-        async with db.cursor() as cur:
-            await cur.execute(
-                "INSERT INTO users (email, password_hash, is_verified, user_name) VALUES (%s, %s, %s, %s);",
-                (user.email, hashed_password, False, user_name)
-            )
-            await db.commit()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to register user: {e}")
-    return {"message": "User registered successfully"}
-
-@app.post("/auth/login/")
-async def login_user(user: UserRegistration, db=Depends(get_db)):
-    # 1. 유저 정보 조회
-    try:
-        async with db.cursor() as cur:
-            await cur.execute("SELECT password_hash, is_verified FROM users WHERE email=%s;", (user.email,))
-            result = await cur.fetchone()
-            # 1-1. 유저 존재 여부
-            if result is None:
-                raise HTTPException(status_code=400, detail="User not found")
-            # 1-2. 이메일 인증 여부
-            if not result["is_verified"]:
-                raise HTTPException(status_code=400, detail="User not verified")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Query failed: {e}")
+        result = await fetch_user_by_email(db, user.email)
+    except UserNotFound:
+        raise HTTPException(status_code=400, detail="User not found")
     # 2. 비밀번호 검증
     pwd_processor = PasswordProcessor()
     if not pwd_processor.verify_password(user.password, result["password_hash"]):
         raise HTTPException(status_code=400, detail="Incorrect password")
-    # 3. [TODO]: 세션 생성 및 토큰 발급
-    return {"message": "Login successful"}
+    # 3. 기존 JWT 토큰 무효화 (토큰 버전 증가) (다중 접속 방지)
+    await update_user_token_version(db, result["id"], result["token_version"] + 1)
+    # 4. 토큰 발급
+    return {"message": "Login successful", "accessToken": create_jwt(user.email, result["id"], result["token_version"] + 1)}
+
+@app.get("/auth/logout/")
+async def logout_user(db=Depends(get_db), user=Depends(verify_jwt_token)):
+    # 1. 토큰 검증 및 파싱
+    # 2. JWT 토큰 무효화 (토큰 버전 증가)
+    print(user)
+    await update_user_token_version(db, user["user_id"], user["token_version"] + 1)
+    return {"message": "Logout successful"}
+
 
 
 

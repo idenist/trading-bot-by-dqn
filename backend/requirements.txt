@@ -10,3 +10,4 @@ dotenv
 sse-starlette
 itsdangerous
 bcrypt>=5.0.0
+PyJWT
