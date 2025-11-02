@@ -32,6 +32,8 @@ APP_KEY="..."
 SECRET_KEY="..."
 
 # Gmail 앱 비밀번호 설정
+# https://myaccount.google.com/apppasswords 접속
+# 앱 이름 적당이 작성 후 비밀번호 생성 하여 SENDER_PASSWORD에 복사 붙여넣기
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587  # TLS
 SENDER_EMAIL = "...@gmail.com" 
