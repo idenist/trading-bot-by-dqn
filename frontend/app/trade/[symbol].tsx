@@ -100,7 +100,7 @@ export default function SymbolDetailScreen() {
 
   useEffect(() => {
     setLoading(true);
-    getChartData(symbol ?? '005930', '1D', formatted_today, 120)
+    getChartData(symbol ?? '005930', '1D', formatted_today, 40)
       .then(setChart)
       .finally(() => setLoading(false));
   }, [symbol]);

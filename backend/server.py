@@ -169,32 +169,33 @@ def get_positions():
 
 @app.get("/portfolio")
 def get_portfolio():
-    resp = acnt.get_account_profit_rate()
-    if not resp:
+    pos = acnt.get_account_profit_rate()
+    if not pos:
         raise HTTPException(404, "보유 종목이 없습니다.")
-    
-    total_eval = 0.0
-    total_profit = 0.0
 
-    for e in resp:
-        # 평가금액 = 현재가 × 수량
-        eval_amt = e.current_price * e.remainder_quantity
-        profit = (e.current_price - e.purchase_price) * e.remainder_quantity
+    # --- 누적(매입가 대비) ---
+    invested_cost = 0.0
+    unrealized = 0.0
+    for e in pos:
+        invested_cost += e.purchase_price * e.remainder_quantity
+        unrealized   += (e.current_price - e.purchase_price) * e.remainder_quantity
+    unrealized_pct = (unrealized / invested_cost) if invested_cost else 0.0
 
-        total_eval += eval_amt
-        total_profit += profit
+    acct = acnt.get_account_evaluation("KRX")
+    total_equity = float(acct.total_estimated)  # 키움 집계치 사용 시 화면과 1:1 일치
+    cash = float(acct.deposit)
 
-    pnl_rate = total_profit / (total_eval - total_profit) if total_eval != 0 else 0
+    return {
+        "currency": "KRW",
+        "totalEquity": f"{round(total_equity,2)}",
+        "cash": f"{round(cash,2)}",
 
-    pf = Portfolio(
-        currency="KRW",
-        totalEquity=str(round(total_eval, 2)),
-        cash="0",  # 예수금 따로 표시하려면 acnt.get_account_evaluation()에서 deposit 가져와 합산
-        pnlDay=str(round(total_profit, 2)),
-        pnlDayPct=f"{pnl_rate:.4f}",
-        updatedAt=datetime.now().astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S") + "Z"
-    )
-    return pf
+        # 누적 손익
+        "pnlDay": f"{round(unrealized,2)}",
+        "pnlDayPct": f"{unrealized_pct:.4f}",  # 0.0123 == 1.23%
+
+        "updatedAt": datetime.now().astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")+"Z",
+    }
 
 # @app.post("/chart/")
 # def get_chart(chart_request: ChartRequest):
