@@ -48,3 +48,20 @@ AUTH_SECRET_KEY = "..."
 # tailscale을 사용하면 제 서버를 공유해드릴 수 있습니다.
 DB_CONNECT_STRING = "postgresql://<username>:<password>@<ipaddr>/<table>"
 ```
+### 데이터베이스
+- 테이블 구조
+```sql
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    user_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    token_version INTEGER NOT NULL DEFAULT 0
+);
+```
+- `id`: 인덱스용 아이디
+- `user_name`: 유저 이름
+- `email`: 이메일 주소
+- `password_hash`: 비밀번호 솔트 해쉬
+- `token_version`: 토큰 무효화용 값 
+    - 만료시간 전 무효화 시키려면 이 값을 변경
