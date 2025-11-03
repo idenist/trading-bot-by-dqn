@@ -7,4 +7,3 @@ function getChartData(symbol: string, interval: string, base_date: string, amoun
 }
 
 export { getChartData };
-

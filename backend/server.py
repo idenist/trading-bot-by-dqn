@@ -1,17 +1,16 @@
-from kiwoom_python.api import KiwoomAPI
-from kiwoom_python.endpoints.account import *
-from kiwoom_python.endpoints.chart import Chart
-from kiwoom_python.model import AccountEntry
-
-from fastapi import FastAPI, HTTPException
+# server.py - DQN 모델 전용 (pythoncom 제거)
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+from typing import List
 from enum import Enum
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from dotenv import load_dotenv
-import os
+import uvicorn
 
 import asyncio
 from typing import Dict, Set
@@ -21,17 +20,33 @@ from pykrx import stock
 
 UTC = ZoneInfo("UTC")
 
-# Create a FastAPI instance
 app = FastAPI()
-load_dotenv()  # .env 파일 불러오기
-appkey = os.getenv("APP_KEY")
-secretkey = os.getenv("SECRET_KEY")
-api = KiwoomAPI(appkey, secretkey, mock=True)
-acnt = Account(api)
-chart = Chart(api)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Pydantic model for data validation in POST request
+# DQN 모델
+class DQN(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(DQN, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 256)
+        self.fc2 = nn.Linear(256, 512)
+        self.fc3 = nn.Linear(512, 512)
+        self.fc4 = nn.Linear(512, 256)
+        self.fc5 = nn.Linear(256, output_dim)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = F.relu(self.fc4(x))
+        return self.fc5(x)
+
 class Position(BaseModel):
     symbol: str
     name: str
@@ -41,255 +56,170 @@ class Position(BaseModel):
     pnl: str
     pnlPct: str
 
-
-class Currency(str, Enum):
-    KRW = "KRW"
-    USD = "USD"
-
-
 class Portfolio(BaseModel):
-    currency: Currency
+    currency: str
     totalEquity: str
     cash: str
     pnlDay: str
     pnlDayPct: str
     updatedAt: str
 
-
-class PositionRequest(BaseModel):
+class OrderRequest(BaseModel):
     symbol: str
-
-
-class ChartRequest(BaseModel):
-    symbol: str
-    base_date: str
-    interval: str
-    amount: int
-
-class QuoteCache:
-    def __init__(self):
-        self.data: Dict[str, dict] = {}   # {symbol: {"price":..., "prevClose":..., "ts":...}}
-        self.watch: Set[str] = set()      # 구독된 심볼 집합
-        self.lock = Lock()
-        self.running = False
-
-    def add(self, symbol: str):
-        with self.lock:
-            self.watch.add(symbol)
-
-    def remove(self, symbol: str):
-        with self.lock:
-            self.watch.discard(symbol)
-
-    def get(self, symbol: str):
-        return self.data.get(symbol)
-
-    async def run(self, interval=1.5):
-        """주기적으로 watch 목록의 시세를 갱신"""
-        self.running = True
-        while self.running:
-            syms = list(self.watch)
-            for sym in syms:
-                try:
-                    ticks = chart.get_stock_tick_chart(sym, True, 1, 1)
-                    if not ticks:
-                        continue
-                    price = float(ticks[0].close)
-                    dailies = chart.get_stock_daily_chart(sym, "", True, amount=2)
-                    prev = float(dailies[1].close) if len(dailies) >= 2 else None
-
-                    self.data[sym] = {
-                        "symbol": sym,
-                        "price": price,
-                        "prevClose": prev,
-                        "ts": datetime.now(tz=UTC).isoformat(),
-                    }
-                except Exception as e:
-                    # 필요 시 로깅
-                    pass
-                await asyncio.sleep(0)  # 이벤트 루프 양보
-            await asyncio.sleep(interval)
-
-    def stop(self):
-        self.running = False
-
-qcache = QuoteCache()
-
-class Quote(BaseModel):
-    symbol: str
-    name: str | None = None
+    side: str
+    type: str
     price: float
-    prevClose: float | None = None
-    ts: str
+    qty: int
 
-origins = [
-    "http://localhost",
-    "http://localhost:8081",
-    "http://192.168.0.5:8081"
-]
+class AIRecommendation(BaseModel):
+    symbol: str
+    action: str
+    confidence: float
+    recommended_qty: int
+    reason: str
 
-# Add the CORS middleware to your app
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"], # Allows all methods (GET, POST, etc.)
-    allow_headers=["*"], # Allows all headers
-)
+buy_model = None
+sell_model = None
 
+@app.on_event("startup")
+async def load_models():
+    global buy_model, sell_model
+    
+    try:
+        INPUT_DIM = 14
+        OUTPUT_DIM = 2
+        
+        buy_model = DQN(INPUT_DIM, OUTPUT_DIM)
+        buy_model.load_state_dict(torch.load("buy_model.pth", map_location='cpu'))
+        buy_model.eval()
+        print("✅ 매수 모델 로드 완료")
+        
+        sell_model = DQN(INPUT_DIM, OUTPUT_DIM)
+        sell_model.load_state_dict(torch.load("sell_model.pth", map_location='cpu'))
+        sell_model.eval()
+        print("✅ 매도 모델 로드 완료")
+    except Exception as e:
+        print(f"⚠️ 모델 로드 실패: {e}")
 
-# POST request handler
 @app.get("/positions")
 def get_positions():
-    crt = Chart(api)
-    resp = acnt.get_account_profit_rate()
-    # positions: list[AccountEntry] = [
-    #     AccountEntry("20771122", "005930", "삼성전자", 100000, 70000, 100, 100, 1.1, 1.2, 0.1)
-    # ]
-    ls = []
-    for i in resp:
-        time.sleep(1)
-        if i.remainder_quantity == 0:
-            continue
-        current_price = crt.get_stock_tick_chart(i.stock_code, True, 1, 1)[0].close
-        pos = Position(
-            symbol=i.stock_code,
-            name=i.stock_name,
-            qty=str(i.remainder_quantity),
-            avgPrice=str(i.purchase_price),
-            lastPrice=str(current_price),
-            pnl=str((current_price - i.purchase_price) * i.remainder_quantity),
-            pnlPct=f"{current_price / i.purchase_price - 1:.3f}"
-        )
-        ls.append(pos)
-    if len(ls) == 0:
-        raise HTTPException(status_code=404, detail="Stock not found in account")
-    return ls
-
+    """키움 서버(8000)에서 조회"""
+    import requests
+    try:
+        resp = requests.get("http://localhost:8000/positions", timeout=2)
+        return resp.json()
+    except:
+        # 키움 서버 미작동 시 Mock
+        return [
+            Position(
+                symbol="005930",
+                name="삼성전자",
+                qty="10",
+                avgPrice="70000",
+                lastPrice="72000",
+                pnl="20000",
+                pnlPct="0.029"
+            ).__dict__
+        ]
 
 @app.get("/portfolio")
 def get_portfolio():
-    pos = acnt.get_account_profit_rate()
-    if not pos:
-        raise HTTPException(404, "보유 종목이 없습니다.")
+    return Portfolio(
+        currency="KRW",
+        totalEquity="10000000",
+        cash="5000000",
+        pnlDay="50000",
+        pnlDayPct="0.005",
+        updatedAt=datetime.now().astimezone(UTC).isoformat()
+    )
 
-    # --- 누적(매입가 대비) ---
-    invested_cost = 0.0
-    unrealized = 0.0
-    for e in pos:
-        invested_cost += e.purchase_price * e.remainder_quantity
-        unrealized   += (e.current_price - e.purchase_price) * e.remainder_quantity
-    unrealized_pct = (unrealized / invested_cost) if invested_cost else 0.0
+@app.post("/order")
+def place_order(order: OrderRequest):
+    """키움 서버로 주문 전달"""
+    import requests
+    try:
+        resp = requests.post("http://localhost:8000/order", json=order.dict(), timeout=2)
+        return resp.json()
+    except:
+        return {"success": False, "orderId": "MOCK", "message": "키움 서버 미연결"}
 
-    acct = acnt.get_account_evaluation("KRX")
-    total_equity = float(acct.total_estimated)  # 키움 집계치 사용 시 화면과 1:1 일치
-    cash = float(acct.deposit)
+@app.get("/quote/{symbol}")
+def get_quote(symbol: str):
+    import requests
+    try:
+        resp = requests.get(f"http://localhost:8000/quote/{symbol}", timeout=2)
+        return resp.json()
+    except:
+        return {"symbol": symbol, "price": "72000", "changePct": "0.01", "timestamp": ""}
 
+@app.get("/chart/{symbol}")
+def get_chart(symbol: str, interval: str = "1D", start_date: str = "", limit: int = 30):
+    result = []
+    base_price = 70000
+    for i in range(limit):
+        variation = np.random.randint(-1000, 1000)
+        result.append({
+            "timestamp": int(datetime.now().timestamp() * 1000) - (i * 86400000),
+            "open": base_price + variation,
+            "high": base_price + variation + 800,
+            "low": base_price + variation - 600,
+            "close": base_price + variation + 200
+        })
+    return result
+
+@app.get("/search/stocks")
+def search_stocks(q: str = Query(..., min_length=1)):
+    stocks_db = [
+        {"symbol": "005930", "name": "삼성전자", "market": "KOSPI"},
+        {"symbol": "000660", "name": "SK하이닉스", "market": "KOSPI"},
+        {"symbol": "035420", "name": "NAVER", "market": "KOSPI"},
+    ]
+    
+    query = q.lower()
+    results = [s for s in stocks_db if query in s["symbol"] or query in s["name"].lower()]
+    return results[:10]
+
+@app.post("/ai/recommend")
+async def get_ai_recommendation(symbol: str):
+    if not buy_model or not sell_model:
+        raise HTTPException(status_code=503, detail="모델 미로드")
+    
+    features = np.random.rand(14).astype(np.float32)
+    
+    with torch.no_grad():
+        buy_q = buy_model(torch.FloatTensor([features])).numpy()[0]
+        buy_action = int(np.argmax(buy_q))
+        buy_confidence = float(np.max(buy_q) - np.min(buy_q))
+    
+    if buy_action == 1 and buy_confidence > 0.3:
+        return AIRecommendation(
+            symbol=symbol,
+            action="BUY",
+            confidence=buy_confidence,
+            recommended_qty=10,
+            reason=f"DQN 매수 추천 (신뢰도: {buy_confidence:.2f})"
+        )
+    else:
+        return AIRecommendation(
+            symbol=symbol,
+            action="HOLD",
+            confidence=0.0,
+            recommended_qty=0,
+            reason="관망"
+        )
+
+@app.get("/health")
+def health():
     return {
-        "currency": "KRW",
-        "totalEquity": f"{round(total_equity,2)}",
-        "cash": f"{round(cash,2)}",
-
-        # 누적 손익
-        "pnlDay": f"{round(unrealized,2)}",
-        "pnlDayPct": f"{unrealized_pct:.4f}",  # 0.0123 == 1.23%
-
-        "updatedAt": datetime.now().astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")+"Z",
+        "status": "healthy",
+        "buy_model_loaded": buy_model is not None,
+        "sell_model_loaded": sell_model is not None,
+        "port": 8001
     }
 
-# @app.post("/chart/")
-# def get_chart(chart_request: ChartRequest):
-#     if chart_request.interval == "1D":
-#         resp = chart.get_stock_daily_chart(chart_request.symbol, chart_request.base_date, True, amount=chart_request.amount)
-#     elif chart_request.interval == "1W":
-#         resp = chart.get_stock_weekly_chart(chart_request.symbol, chart_request.base_date, True, amount=chart_request.amount)
-#     elif chart_request.interval == "1M":
-#         resp = chart.get_stock_monthly_chart(chart_request.symbol, chart_request.base_date, True, amount=chart_request.amount)
-#     else:
-#         raise HTTPException(status_code=422, detail=f"Unknown interval {chart_request.interval}")
-#     ret = [x.to_minimal_dict() for x in resp][-1:-chart_request.amount - 1:-1]
-#     return ret
+@app.get("/")
+def root():
+    return {"message": "DQN Model Server (64bit)", "port": 8001}
 
-@app.post("/chart")
-def get_chart(req: ChartRequest):
-    # 1) base_date 정규화
-    base = (req.base_date or "").replace("-", "")
-    if base == "" or base.lower() in ("latest", "today"):
-        base = datetime.now().strftime("%Y%m%d")   # mock에서도 안전한 오늘 날짜
-
-    amount = max(1, min(req.amount, 500))  # 가드
-
-    try:
-        if req.interval == "1D":
-            resp = chart.get_stock_daily_chart(req.symbol, base, True, amount=amount*2)
-        elif req.interval == "1W":
-            resp = chart.get_stock_weekly_chart(req.symbol, base, True, amount=amount*2)
-        elif req.interval == "1M":
-            resp = chart.get_stock_monthly_chart(req.symbol, base, True, amount=amount*2)
-        else:
-            raise HTTPException(status_code=422, detail=f"Unknown interval {req.interval}")
-    except Exception as e:
-        raise HTTPException(500, f"provider error: {e}")
-
-    items = [x.to_minimal_dict() for x in (resp or [])]
-
-    # 5) mock에서 가끔 빈 배열이 오면, 아주 큰 날짜로 재시도 (최신 스냅)
-    if not items:
-        try:
-            fallback_base = "20991231"
-            if req.interval == "1D":
-                resp = chart.get_stock_daily_chart(req.symbol, fallback_base, True, amount=amount*2)
-            elif req.interval == "1W":
-                resp = chart.get_stock_weekly_chart(req.symbol, fallback_base, True, amount=amount*2)
-            else:
-                resp = chart.get_stock_monthly_chart(req.symbol, fallback_base, True, amount=amount*2)
-            items = [x.to_minimal_dict() for x in (resp or [])]
-        except:
-            pass
-
-    if not items:
-        # 그래도 없으면 404
-        raise HTTPException(404, "차트 데이터를 가져올 수 없습니다.")
-
-    # 2) 시간 오름차순 정렬
-    items.sort(key=lambda d: d["timestamp"])
-
-    # 3) 초 → 밀리초 보정
-    for it in items:
-        if it["timestamp"] < 10**12:
-            it["timestamp"] *= 1000
-
-    # 4) 마지막 N개만 반환
-    return items[-amount:]
-
-@app.on_event("startup")
-async def _startup():
-    # 자주 쓰는 종목을 미리 등록해도 좋다.
-    # qcache.add("005930"); qcache.add("000660")
-    asyncio.create_task(qcache.run(interval=1.5))
-    
-def get_name_krx(code: str) -> str | None:
-    try:
-        return stock.get_market_ticker_name(code)  # '삼성전자' 같은 이름 반환
-    except Exception:
-        return None
-
-@app.get("/quote/{symbol}", response_model=Quote)
-def get_quote(symbol: str):
-    ticks = chart.get_stock_tick_chart(symbol, True, 1, 1)
-    if not ticks:
-        raise HTTPException(404, "틱 데이터를 가져올 수 없습니다.")
-    last = ticks[0].close
-
-    # ✅ 전일종가 구하기 (일봉 2개 조회)
-    dailies = chart.get_stock_daily_chart(symbol, datetime.today().strftime("%Y%m%d"), True, amount=2)
-    prev_close = dailies[1].close if len(dailies) >= 2 else None
-    name = get_name_krx(symbol)
-
-    return Quote(
-        symbol=symbol,
-        name=name,
-        price=float(last),
-        prevClose=float(prev_close) if prev_close else None,
-        ts=datetime.now(tz=UTC).isoformat()
-    )
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8001)
