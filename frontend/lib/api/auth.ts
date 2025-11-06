@@ -1,7 +1,5 @@
-import axios from "axios";
+import { api } from "@/lib/api/client";
 import { getItem, setItem, deleteItem } from "@/lib/storage";
-
-const api = axios.create({ baseURL: process.env.EXPO_PUBLIC_API_BASE });
 
 export type AuthResp = { accessToken: string; refreshToken?: string };
 
@@ -17,8 +15,14 @@ export async function registerApi(body: { email: string; password: string }): Pr
 }
 
 export async function logoutApi() {
-  await deleteItem("accessToken");
-  await deleteItem("refreshToken");
+  try {
+    await api.get("/auth/logout");
+  } catch (error) {
+    console.error("Failed to logout from server", error);
+  } finally {
+    await deleteItem("accessToken");
+    await deleteItem("refreshToken");
+  }
 }
 
 export async function getAccessToken() {

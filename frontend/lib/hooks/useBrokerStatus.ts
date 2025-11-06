@@ -14,11 +14,14 @@ export function useBrokerStatus(intervalMs = 5000) {
         const s = await getBrokerStatus();
         if (!alive) return;
         setData(s);
-        setLoading(false);
-      } catch {
-        /* ignore */
+      } catch (e: any) {
+        if (!alive) return;
+        // 실패해도 최소 상태는 내려줘서 UI가 진행되게
+        setData(prev => prev ?? { broker: "kiwoom", status: "DISCONNECTED", message: e?.message });
+      } finally {
+        if (alive) setLoading(false);           // ✅ 성공/실패 모두에서 로딩 해제
+        timer = setTimeout(tick, intervalMs);   // 다음 폴링 예약
       }
-      timer = setTimeout(tick, intervalMs);
     }
 
     setLoading(true);

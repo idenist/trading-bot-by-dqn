@@ -37,7 +37,7 @@ export default function LoginScreen() {
 
         <View style={s.row}>
           <Text style={{ color: "#6b7280" }}>계정이 없으신가요?</Text>
-          <Link href="/(auth)/register" asChild><TouchableOpacity><Text style={s.link}> 회원가입</Text></TouchableOpacity></Link>
+          <Link href="/register" asChild><TouchableOpacity><Text style={s.link}> 회원가입</Text></TouchableOpacity></Link>
         </View>
       </View>
     </SafeAreaView>
