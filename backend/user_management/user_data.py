@@ -31,3 +31,9 @@ class UserAuthData(BaseModel):
 class Token(BaseModel):
     """JWT token structure"""
     token: str
+
+class APIKeyData(BaseModel):
+    """API key data structure"""
+    appkey: str
+    secretkey: str
+    mock: bool = True
