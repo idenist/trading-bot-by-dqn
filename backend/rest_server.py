@@ -122,9 +122,18 @@ app = FastAPI(lifespan=lifespan)
 security = HTTPBearer()
 appkey = os.getenv("APP_KEY")
 secretkey = os.getenv("SECRET_KEY")
+# 디버그용
 api = KiwoomAPI(appkey, secretkey, mock=True)
 acnt = Account(api)
 chart = Chart(api)
+# 유저 - api 매핑
+apis = dict()
+def get_api_for_user(secrets: dict) -> KiwoomAPI:
+    user_appkey = secrets.get("appkey")
+    user_secretkey = secrets.get("secretkey")
+    mock = secrets.get("mock", True)
+    assert user_appkey is not None and user_secretkey is not None, "API key not set properly."
+    return KiwoomAPI(user_appkey, user_secretkey, mock)
 
 # Add the CORS middleware to your app
 app.add_middleware(
@@ -143,6 +152,7 @@ from user_management.user_data import *
 from user_management.email_verification import *
 from user_management.session_manager import *
 from user_management.user_repository import *
+from user_management.secret_manager import *
 
 # TODO: 가입 절차를 (생성 -> 인증 메일 발송 -> 업데이트) 에서 (인증 메일 발송 -> 생성) 으로 간소화
 
@@ -154,11 +164,6 @@ class LoginResponse(BaseModel):
     accessToken: str
 
 async def verify_jwt_token(db = Depends(get_db), credentials: HTTPAuthorizationCredentials = Depends(security)):
-    # 0. 디버그용; JWT의 유효성을 검사하지 않고 페이로드만 반환
-    if not VERIFY_SESSION:
-        token = credentials.credentials
-        is_vaild, payload = jwt.decode(token, SECRET_KEY, algorithms=['HS256'], options={"verify_exp": False})
-        return True, payload
     # 1. 헤더에서 토큰 추출
     token = credentials.credentials
     # 2. 토큰 복호화 및 검증
@@ -179,7 +184,17 @@ async def verify_jwt_token(db = Depends(get_db), credentials: HTTPAuthorizationC
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Token has been invalidated, {type(session_token_version)} vs {type(current_token_version)}"
         )
-    return payload
+    # 5. api 키 복호화
+    if result["apisecret"] is None:
+        result['api'] = None
+    else:
+        AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
+        secrets = decrypt_dict(result["apisecret"], AUTH_SECRET_KEY)
+        result['api'] = get_api_for_user(secrets)
+    # 6. 페이로드에 유저 정보 추가
+    result["token"] = payload
+    return result
+
 # ===================================================
 # API 엔드포인트
 
@@ -187,7 +202,9 @@ async def verify_jwt_token(db = Depends(get_db), credentials: HTTPAuthorizationC
 # POST request handler
 @app.get("/positions")
 def get_positions(user=Depends(verify_jwt_token)):
-    crt = Chart(api)
+    if user["api"] is None:
+        raise HTTPException(status_code=400, detail="API keys not set")
+    crt = Chart(user["api"])
     resp = acnt.get_account_profit_rate()
     # positions: list[AccountEntry] = [
     #     AccountEntry("20771122", "005930", "삼성전자", 100000, 70000, 100, 100, 1.1, 1.2, 0.1)
@@ -215,6 +232,9 @@ def get_positions(user=Depends(verify_jwt_token)):
 
 @app.get("/portfolio")
 def get_portfolio(user=Depends(verify_jwt_token)):
+    if user["api"] is None:
+        raise HTTPException(status_code=400, detail="API keys not set")
+    acnt = Account(user["api"])
     resp = acnt.get_account_evaluation("KRX")
     pf = Portfolio(
         currency="KRW",
@@ -228,7 +248,9 @@ def get_portfolio(user=Depends(verify_jwt_token)):
 
 @app.post("/chart/")
 def get_chart(chart_request: ChartRequest, user=Depends(verify_jwt_token)):
-    print(chart_request.interval)
+    if user["api"] is None:
+        raise HTTPException(status_code=400, detail="API keys not set")
+    chart = Chart(user["api"])
     if chart_request.interval == "1D":
         resp = chart.get_stock_daily_chart(chart_request.symbol, chart_request.base_date, True, amount=chart_request.amount)
     elif chart_request.interval == "1W":
@@ -254,8 +276,8 @@ async def send_verification(data: UserAuthData, db=Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query failed: {e}")
     # 2. 이메일 인증 토큰 생성
-    SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
-    verifier = EmailVerifier(SECRET_KEY)
+    AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
+    verifier = EmailVerifier(AUTH_SECRET_KEY)
     token = verifier.generate_token(data.model_dump())
     # 3. 인증 링크 생성
     backend_base_url = os.getenv("BACKEND_BASE_URL", "http://localhost:8000")
@@ -275,8 +297,8 @@ async def send_verification(data: UserAuthData, db=Depends(get_db)):
 @app.get("/auth/verify/", response_class=HTMLResponse)
 async def verify_email(token: str, db=Depends(get_db)):
     # 1. 토큰 검증
-    SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
-    verifier = EmailVerifier(SECRET_KEY)
+    AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
+    verifier = EmailVerifier(AUTH_SECRET_KEY)
     data = verifier.verify_token(token)  # 10분 유효
     if data is None:
         return get_verification_state_page(False, msg="토큰이 만료되었습니다.")
@@ -309,12 +331,31 @@ async def login_user(user: UserAuthData, db=Depends(get_db)):
 async def logout_user(db=Depends(get_db), user=Depends(verify_jwt_token)):
     # 1. 토큰 검증 및 파싱
     # 2. JWT 토큰 무효화 (토큰 버전 증가)
-    print(user)
-    await update_user_token_version(db, user["user_id"], user["token_version"] + 1)
+    token = user["token"]
+    await update_user_token_version(db, token["user_id"], token["token_version"] + 1)
     return {"message": "Logout successful"}
 
+@app.post("/auth/set_api_keys/")
+async def set_api_keys(api_keys: APIKeyData, db=Depends(get_db), user=Depends(verify_jwt_token)):
+    # 1. API 키 암호화
+    AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
+    encrypted_keys = encrypt_dict(api_keys.model_dump(), AUTH_SECRET_KEY)
+    # 2. 데이터베이스에 저장
+    await update_user_api_keys(db, user["id"], encrypted_keys)
+    return {"message": "API keys set successfully"}
 
+@app.get("/auth/get_api_keys/", response_model=APIKeyData)
+async def get_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token)):
+    if user["apisecret"] is None:
+        return APIKeyData("", "", True)
+    AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
+    secrets = decrypt_dict(user["apisecret"], AUTH_SECRET_KEY)
+    return APIKeyData(**secrets)
 
+@app.delete("/auth/delete_api_keys/")
+async def delete_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token)):
+    await update_user_api_keys(db, user["id"], None)
+    return {"message": "API keys deleted successfully"}
 
 
 # ===================================================

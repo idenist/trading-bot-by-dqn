@@ -7,6 +7,7 @@
     - `user_data.py` : 유저 데이터 관련 dto
     - `database.py` : 사용하지 않음 (user_repository)로 대체
     - `user_repository.py` : DB 연결 추상화 계층
+    - `secret_manager.py` : 민감한 정보 암호화/복호화
 - `rest_server.py`
     - REST API를 사용하는 서버
     - 키움 API 관련 엔드포인트 함수들 (인증키를 다른 곳에서 받아올 수 있도록 수정할 필요가 있어보임)
@@ -56,7 +57,8 @@ CREATE TABLE users (
     user_name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    token_version INTEGER NOT NULL DEFAULT 0
+    token_version INTEGER NOT NULL DEFAULT 0,
+    apisecret TEXT
 );
 ```
 - `id`: 인덱스용 아이디
@@ -65,3 +67,4 @@ CREATE TABLE users (
 - `password_hash`: 비밀번호 솔트 해쉬
 - `token_version`: 토큰 무효화용 값 
     - 만료시간 전 무효화 시키려면 이 값을 변경
+- `apisecret`: 암호화된 api키 딕셔너리 (dict -> json -> string -> encrypted)

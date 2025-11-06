@@ -15,7 +15,7 @@ async def fetch_user_by_email(db: AsyncConnectionPool.connection, email: str) ->
     :param email: 사용자 이메일
     :return: 사용자 정보 딕셔너리. 에러 없이 리턴하는 경우 None이 아님을 보장.
     """
-    query = "SELECT id, email, user_name, password_hash, token_version FROM users WHERE email = %s"
+    query = "SELECT * FROM users WHERE email = %s"
     async with db.cursor() as cur:
         await cur.execute(query, (email,))
         user = await cur.fetchone()
@@ -55,3 +55,9 @@ async def delete_user(db: AsyncConnectionPool.connection, email: int) -> None:
     query = "DELETE FROM users WHERE email = %s"
     async with db.cursor() as cur:
         await cur.execute(query, (email,))
+
+async def update_user_api_keys(db: AsyncConnectionPool.connection, user_id: int, encrypted_keys: str) -> None:
+    """사용자의 API 키를 업데이트합니다."""
+    query = "UPDATE users SET apisecret = %s WHERE id = %s"
+    async with db.cursor() as cur:
+        await cur.execute(query, (encrypted_keys, user_id))
