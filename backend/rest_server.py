@@ -190,7 +190,11 @@ async def verify_jwt_token(db = Depends(get_db), credentials: HTTPAuthorizationC
     else:
         AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
         secrets = decrypt_dict(result["apisecret"], AUTH_SECRET_KEY)
-        result['api'] = get_api_for_user(secrets)
+        try:
+            result['api'] = get_api_for_user(secrets)
+        except KeyError:
+            result['api'] = None
+            print(secrets)
     # 6. 페이로드에 유저 정보 추가
     result["token"] = payload
     return result
