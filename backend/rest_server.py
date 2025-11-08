@@ -195,6 +195,7 @@ async def verify_jwt_token(db = Depends(get_db), credentials: HTTPAuthorizationC
     result["token"] = payload
     return result
 
+
 # ===================================================
 # API 엔드포인트
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, ScrollView } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, ScrollView, Platform, ToastAndroid } from "react-native";
 import { getApiKeys, setApiKeys, deleteApiKeys } from "@/lib/api/auth"; // 아래 2️⃣에 추가할 함수들
 import { useRouter } from "expo-router";
 
@@ -27,43 +27,95 @@ export default function AccountLinkScreen() {
   }, []);
 
   const onSave = async () => {
-    if (!appKey || !secretKey) {
-      Alert.alert("입력 오류", "App Key와 Secret Key를 모두 입력해주세요.");
-      return;
-    }
-    setLoading(true);
-    try {
-      await setApiKeys({ appkey: appKey, secretkey: secretKey, mock });
-      Alert.alert("완료", "API 키가 저장되었습니다.", [
-        { text: "확인", onPress: () => router.back() },
-      ]);
-    } catch (e) {
-      console.error(e);
-      Alert.alert("오류", "API 키 저장에 실패했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
+      if (!appKey || !secretKey) {
+        if (Platform.OS === "web") {
+          window.alert("App Key와 Secret Key를 모두 입력해주세요.");
+        } else {
+          Alert.alert("입력 오류", "App Key와 Secret Key를 모두 입력해주세요.");
+        }
+        return;
+      }
 
-  const onDelete = async () => {
-    Alert.alert("확인", "API 키를 삭제하시겠습니까?", [
-      { text: "취소", style: "cancel" },
-      {
-        text: "삭제",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteApiKeys();
-            setAppKey("");
-            setSecretKey("");
-            Alert.alert("삭제 완료", "API 키가 삭제되었습니다.");
-          } catch {
-            Alert.alert("오류", "삭제 실패");
-          }
-        },
-      },
-    ]);
-  };
+      setLoading(true);
+      try {
+        await setApiKeys({
+          appkey: appKey.trim(),
+          secretkey: secretKey.trim(),
+          mock,
+        });
+
+        if (Platform.OS === "web") {
+          window.alert("API 키가 저장되었습니다.");
+          router.back(); // 직접 이동
+        } else {
+          Alert.alert("완료", "API 키가 저장되었습니다.", [
+            { text: "확인", onPress: () => router.back() },
+          ]);
+        }
+      } catch (e: any) {
+        console.error("❌ setApiKeys error", e?.response?.status, e?.response?.data ?? e);
+        const msg = e?.response?.data?.detail || e?.message || "API 키 저장에 실패했습니다.";
+
+        if (Platform.OS === "web") {
+          window.alert(msg);
+        } else {
+          Alert.alert("오류", msg);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+  async function confirm(title: string, message: string): Promise<boolean> {
+      if (Platform.OS === "web") {
+        return window.confirm(`${title}\n\n${message}`);
+      }
+      return new Promise((resolve) => {
+        Alert.alert(title, message, [
+          { text: "취소", style: "cancel", onPress: () => resolve(false) },
+          { text: "삭제", style: "destructive", onPress: () => resolve(true) },
+        ]);
+      });
+    }
+
+    const onDelete = async () => {
+      console.log("🗑 onDelete pressed");
+
+      const ok = await confirm("확인", "API 키를 삭제하시겠습니까?");
+      if (!ok) return;
+
+      try {
+        setLoading(true);
+        await deleteApiKeys();
+        setAppKey("");
+        setSecretKey("");
+        setMock(true);
+
+        // (선택) 실제 비워졌는지 확인
+        try {
+          const after = await getApiKeys();
+          console.log("✅ after delete:", after);
+        } catch {}
+
+        if (Platform.OS === "android") {
+          // android 토스트
+          const { ToastAndroid } = await import("react-native");
+          ToastAndroid.show("삭제 완료", ToastAndroid.SHORT);
+        } else if (Platform.OS === "web") {
+          // 웹은 기본 alert로 피드백
+          window.alert("API 키가 삭제되었습니다.");
+        } else {
+          Alert.alert("삭제 완료", "API 키가 삭제되었습니다.");
+        }
+      } catch (e: any) {
+        console.log("❌ delete_api_keys error", e?.response?.status, e?.response?.data ?? e);
+        const msg = e?.response?.data?.detail || e?.message || "삭제 실패";
+        if (Platform.OS === "web") window.alert(String(msg));
+        else Alert.alert("오류", String(msg));
+      } finally {
+        setLoading(false);
+      }
+    };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -110,7 +162,7 @@ export default function AccountLinkScreen() {
           <Text style={styles.btnText}>저장</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.delBtn} onPress={onDelete}>
+        <TouchableOpacity style={styles.delBtn} onPress={onDelete} activeOpacity={0.8}>
           <Text style={styles.delText}>API 키 삭제</Text>
         </TouchableOpacity>
       </ScrollView>
