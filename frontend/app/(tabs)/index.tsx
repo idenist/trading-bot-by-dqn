@@ -124,7 +124,7 @@ export default function Home() {
 
   // ⬇️ 추가: 브로커 상태
   const { status, loading: linkLoading } = useBrokerStatus(4000);
-  const isLinked = status?.status === "CONNECTED";
+  const isLinked = status === "CONNECTED";
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -185,7 +185,11 @@ export default function Home() {
                   >
                     <Text style={styles.linkBtnTx}>계좌 연동하기</Text>
                   </TouchableOpacity>
-                  {!!status?.message && <Text style={[styles.muted, { marginTop: 6 }]}>{status.message}</Text>}
+                  {status === "DISCONNECTED" && (
+                    <Text style={[styles.muted, { marginTop: 6 }]}>
+                      계좌 연동이 아직 설정되지 않았습니다.
+                    </Text>
+                  )}
                 </View>
               ) : (
                 <>

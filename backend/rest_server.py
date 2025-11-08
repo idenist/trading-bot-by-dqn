@@ -347,7 +347,7 @@ async def set_api_keys(api_keys: APIKeyData, db=Depends(get_db), user=Depends(ve
 @app.get("/auth/get_api_keys/", response_model=APIKeyData)
 async def get_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token)):
     if user["apisecret"] is None:
-        return APIKeyData("", "", True)
+        return APIKeyData(appkey="", secretkey="", mock=True)
     AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
     secrets = decrypt_dict(user["apisecret"], AUTH_SECRET_KEY)
     return APIKeyData(**secrets)

@@ -28,3 +28,22 @@ export async function logoutApi() {
 export async function getAccessToken() {
   return getItem("accessToken");
 }
+
+export interface APIKeyData {
+  appkey: string;
+  secretkey: string;
+  mock: boolean;
+}
+
+export async function getApiKeys(): Promise<APIKeyData | null> {
+  const res = await api.get<APIKeyData>("/auth/get_api_keys/");
+  return res.data;
+}
+
+export async function setApiKeys(data: APIKeyData): Promise<void> {
+  await api.post("/auth/set_api_keys/", data);
+}
+
+export async function deleteApiKeys(): Promise<void> {
+  await api.delete("/auth/delete_api_keys/");
+}

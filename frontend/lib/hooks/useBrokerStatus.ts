@@ -1,8 +1,10 @@
+// lib/hooks/useBrokerStatus.ts
 import { useEffect, useState } from "react";
-import { getBrokerStatus, type BrokerStatus } from "@/lib/api/broker";
+import { getApiKeys } from "@/lib/api/auth";
+import { getAccessToken } from "@/lib/storage"; // 경로는 너 프로젝트에 맞춰
 
 export function useBrokerStatus(intervalMs = 5000) {
-  const [data, setData] = useState<BrokerStatus | null>(null);
+  const [status, setStatus] = useState<"CONNECTED" | "DISCONNECTED">("DISCONNECTED");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -11,23 +13,29 @@ export function useBrokerStatus(intervalMs = 5000) {
 
     async function tick() {
       try {
-        const s = await getBrokerStatus();
+        const token = await getAccessToken();
         if (!alive) return;
-        setData(s);
-      } catch (e: any) {
+
+        if (!token) {
+          setStatus("DISCONNECTED");
+          return; // ✅ 토큰 없으면 API 호출 금지
+        }
+
+        const keys = await getApiKeys(); // 여기까지 오면 인터셉터가 Authorization 붙임
         if (!alive) return;
-        // 실패해도 최소 상태는 내려줘서 UI가 진행되게
-        setData(prev => prev ?? { broker: "kiwoom", status: "DISCONNECTED", message: e?.message });
+        setStatus(keys?.appkey && keys?.secretkey ? "CONNECTED" : "DISCONNECTED");
+      } catch {
+        if (!alive) return;
+        setStatus("DISCONNECTED");
       } finally {
-        if (alive) setLoading(false);           // ✅ 성공/실패 모두에서 로딩 해제
-        timer = setTimeout(tick, intervalMs);   // 다음 폴링 예약
+        if (alive) setLoading(false);
+        timer = setTimeout(tick, intervalMs);
       }
     }
 
-    setLoading(true);
     tick();
     return () => { alive = false; clearTimeout(timer); };
   }, [intervalMs]);
 
-  return { status: data, loading };
+  return { status, loading };
 }
