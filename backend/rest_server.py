@@ -2,9 +2,10 @@ from kiwoom_python.api import KiwoomAPI
 from kiwoom_python.endpoints.account import *
 from kiwoom_python.endpoints.chart import Chart
 from kiwoom_python.model import AccountEntry
+from kiwoom_python.exceptions import KiwoomApiError
 
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -144,6 +145,22 @@ app.add_middleware(
     allow_headers=["*"], # Allows all headers
 )
 
+
+
+# ===================================================
+# 키움 API 에러 핸들러
+# ===================================================
+@app.exception_handler(KiwoomApiError)
+async def key_error_exception_handler(request: Request, exc: KiwoomApiError):
+    return JSONResponse(
+        status_code=500, 
+        content={
+            "kiwoom_error_code": exc.error_code,
+            "reason": exc.reason,
+            "detail": exc.detail,
+        }
+    )
+
 # ===================================================
 # 유저 관리
 # ===================================================
@@ -162,42 +179,42 @@ class VerificationRequest(BaseModel):
 class LoginResponse(BaseModel):
     message: str
     accessToken: str
-
-async def verify_jwt_token(db = Depends(get_db), credentials: HTTPAuthorizationCredentials = Depends(security)):
-    # 1. 헤더에서 토큰 추출
-    token = credentials.credentials
-    # 2. 토큰 복호화 및 검증
-    is_valid, payload = verify_jwt(token)
-    if not is_valid:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=payload
-        )
-    # 3. 토큰 버전 쿼리
-    email = payload["email"]
-    session_token_version = payload["token_version"]
-    result = await fetch_user_by_email(db, email)
-    current_token_version = result["token_version"]
-    # 4. 토큰 버전 비교
-    if int(session_token_version) != current_token_version:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token has been invalidated, {type(session_token_version)} vs {type(current_token_version)}"
-        )
-    # 5. api 키 복호화
-    if result["apisecret"] is None:
-        result['api'] = None
-    else:
-        AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
-        secrets = decrypt_dict(result["apisecret"], AUTH_SECRET_KEY)
-        try:
-            result['api'] = get_api_for_user(secrets)
-        except KeyError:
+def verify_jwt_token(get_api=False):
+    async def __f(db = Depends(get_db), credentials: HTTPAuthorizationCredentials = Depends(security)):
+        # 1. 헤더에서 토큰 추출
+        token = credentials.credentials
+        # 2. 토큰 복호화 및 검증
+        is_valid, payload = verify_jwt(token)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=payload
+            )
+        # 3. 토큰 버전 쿼리
+        email = payload["email"]
+        session_token_version = payload["token_version"]
+        result = await fetch_user_by_email(db, email)
+        current_token_version = result["token_version"]
+        # 4. 토큰 버전 비교
+        if int(session_token_version) != current_token_version:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Token has been invalidated, {type(session_token_version)} vs {type(current_token_version)}"
+            )
+        if not get_api:
+            return result
+        # 5. api 키 복호화
+        if result["apisecret"] is None:
             result['api'] = None
-            print(secrets)
-    # 6. 페이로드에 유저 정보 추가
-    result["token"] = payload
-    return result
+        else:
+            AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
+            secrets = decrypt_dict(result["apisecret"], AUTH_SECRET_KEY)
+            result['api'] = get_api_for_user(secrets)
+
+        # 6. 페이로드에 유저 정보 추가
+        result["token"] = payload
+        return result
+    return __f
 
 
 # ===================================================
@@ -206,7 +223,7 @@ async def verify_jwt_token(db = Depends(get_db), credentials: HTTPAuthorizationC
 
 # POST request handler
 @app.get("/positions")
-def get_positions(user=Depends(verify_jwt_token)):
+def get_positions(user=Depends(verify_jwt_token(get_api=True))):
     if user["api"] is None:
         raise HTTPException(status_code=400, detail="API keys not set")
     crt = Chart(user["api"])
@@ -236,7 +253,7 @@ def get_positions(user=Depends(verify_jwt_token)):
 
 
 @app.get("/portfolio")
-def get_portfolio(user=Depends(verify_jwt_token)):
+def get_portfolio(user=Depends(verify_jwt_token(get_api=True))):
     if user["api"] is None:
         raise HTTPException(status_code=400, detail="API keys not set")
     acnt = Account(user["api"])
@@ -252,7 +269,7 @@ def get_portfolio(user=Depends(verify_jwt_token)):
     return pf
 
 @app.post("/chart/")
-def get_chart(chart_request: ChartRequest, user=Depends(verify_jwt_token)):
+def get_chart(chart_request: ChartRequest, user=Depends(verify_jwt_token(get_api=True))):
     if user["api"] is None:
         raise HTTPException(status_code=400, detail="API keys not set")
     chart = Chart(user["api"])
@@ -333,7 +350,7 @@ async def login_user(user: UserAuthData, db=Depends(get_db)):
     return {"message": "Login successful", "accessToken": create_jwt(user.email, result["id"], result["token_version"] + 1)}
 
 @app.get("/auth/logout/")
-async def logout_user(db=Depends(get_db), user=Depends(verify_jwt_token)):
+async def logout_user(db=Depends(get_db), user=Depends(verify_jwt_token())):
     # 1. 토큰 검증 및 파싱
     # 2. JWT 토큰 무효화 (토큰 버전 증가)
     token = user["token"]
@@ -341,7 +358,7 @@ async def logout_user(db=Depends(get_db), user=Depends(verify_jwt_token)):
     return {"message": "Logout successful"}
 
 @app.post("/auth/set_api_keys/")
-async def set_api_keys(api_keys: APIKeyData, db=Depends(get_db), user=Depends(verify_jwt_token)):
+async def set_api_keys(api_keys: APIKeyData, db=Depends(get_db), user=Depends(verify_jwt_token(get_api=True))):
     # 1. API 키 암호화
     AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
     encrypted_keys = encrypt_dict(api_keys.model_dump(), AUTH_SECRET_KEY)
@@ -350,7 +367,7 @@ async def set_api_keys(api_keys: APIKeyData, db=Depends(get_db), user=Depends(ve
     return {"message": "API keys set successfully"}
 
 @app.get("/auth/get_api_keys/", response_model=APIKeyData)
-async def get_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token)):
+async def get_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token())):
     if user["apisecret"] is None:
         return APIKeyData(appkey="", secretkey="", mock=True)
     AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
@@ -358,7 +375,7 @@ async def get_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token)):
     return APIKeyData(**secrets)
 
 @app.delete("/auth/delete_api_keys/")
-async def delete_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token)):
+async def delete_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token())):
     await update_user_api_keys(db, user["id"], None)
     return {"message": "API keys deleted successfully"}
 
