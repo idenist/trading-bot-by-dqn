@@ -358,11 +358,13 @@ async def logout_user(db=Depends(get_db), user=Depends(verify_jwt_token())):
     return {"message": "Logout successful"}
 
 @app.post("/auth/set_api_keys/")
-async def set_api_keys(api_keys: APIKeyData, db=Depends(get_db), user=Depends(verify_jwt_token(get_api=True))):
-    # 1. API 키 암호화
+async def set_api_keys(api_keys: APIKeyData, db=Depends(get_db), user=Depends(verify_jwt_token())):
+    # 1. 키 검증
+    _ = KiwoomAPI(api_keys.appkey, api_keys.secretkey, api_keys.mock)
+    # 2. API 키 암호화
     AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
     encrypted_keys = encrypt_dict(api_keys.model_dump(), AUTH_SECRET_KEY)
-    # 2. 데이터베이스에 저장
+    # 3. 데이터베이스에 저장
     await update_user_api_keys(db, user["id"], encrypted_keys)
     return {"message": "API keys set successfully"}
 
