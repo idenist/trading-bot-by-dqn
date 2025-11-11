@@ -27,44 +27,40 @@ export default function AccountLinkScreen() {
   }, []);
 
   const onSave = async () => {
-      if (!appKey || !secretKey) {
-        if (Platform.OS === "web") {
-          window.alert("App Key와 Secret Key를 모두 입력해주세요.");
-        } else {
-          Alert.alert("입력 오류", "App Key와 Secret Key를 모두 입력해주세요.");
-        }
-        return;
+    if (!appKey || !secretKey) {
+      Platform.OS === "web"
+        ? window.alert("App Key와 Secret Key를 모두 입력해주세요.")
+        : Alert.alert("입력 오류", "App Key와 Secret Key를 모두 입력해주세요.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await setApiKeys({
+        appkey: appKey.trim(),
+        secretkey: secretKey.trim(),
+        mock,
+      });
+
+      // ✅ 저장 직후 서버에서 다시 읽어 확인
+      const saved = await getApiKeys();
+      const linked = !!(saved?.appkey && saved?.secretkey);
+
+      if (Platform.OS === "web") {
+        window.alert(linked ? "API 키가 저장되었습니다." : "저장에는 성공했지만 키가 비어있습니다.");
+      } else {
+        Alert.alert("완료", linked ? "API 키가 저장되었습니다." : "저장에는 성공했지만 키가 비어있습니다.");
       }
 
-      setLoading(true);
-      try {
-        await setApiKeys({
-          appkey: appKey.trim(),
-          secretkey: secretKey.trim(),
-          mock,
-        });
-
-        if (Platform.OS === "web") {
-          window.alert("API 키가 저장되었습니다.");
-          router.back(); // 직접 이동
-        } else {
-          Alert.alert("완료", "API 키가 저장되었습니다.", [
-            { text: "확인", onPress: () => router.back() },
-          ]);
-        }
-      } catch (e: any) {
-        console.error("❌ setApiKeys error", e?.response?.status, e?.response?.data ?? e);
-        const msg = e?.response?.data?.detail || e?.message || "API 키 저장에 실패했습니다.";
-
-        if (Platform.OS === "web") {
-          window.alert(msg);
-        } else {
-          Alert.alert("오류", msg);
-        }
-      } finally {
-        setLoading(false);
-      }
-    };
+      // ✅ 홈으로 교체 이동 + 새로고침 신호 전달
+      router.replace({ pathname: "/", params: { refresh: "1" } });
+    } catch (e: any) {
+      const msg = e?.response?.data?.detail || e?.message || "API 키 저장에 실패했습니다.";
+      Platform.OS === "web" ? window.alert(msg) : Alert.alert("오류", msg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   async function confirm(title: string, message: string): Promise<boolean> {
       if (Platform.OS === "web") {

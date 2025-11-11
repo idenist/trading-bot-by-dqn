@@ -1,7 +1,7 @@
 // app/(tabs)/index.tsx
-
 import { getPortfolio, getPositions } from "@/lib/api/portfolio";
 import { PortfolioSnapshot, Position } from "@/lib/api/types";
+import { getApiKeys } from "@/lib/api/auth";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -16,9 +16,7 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-
-// ⬇️ 추가: 브로커 상태 폴링 훅
-import { useBrokerStatus } from "@/lib/hooks/useBrokerStatus"; // 앞서 만든 훅 경로
+import { useFocusEffect } from "@react-navigation/native";
 
 /** ---------- 유틸 ---------- */
 function Money({ v }: { v: string }) {
@@ -37,7 +35,7 @@ function Pct({ v }: { v: string }) {
   return <Text style={{ color, fontWeight: "700" }}>{sign}{(n * 100).toFixed(2)}%</Text>;
 }
 
-/** ---------- 컴포넌트 ---------- */
+/** ---------- 보조 컴포넌트 ---------- */
 function SectionHeader({ title, onPressMore }: { title: string; onPressMore?: () => void }) {
   return (
     <View style={styles.sectionHeader}>
@@ -62,7 +60,7 @@ function EquityCard({ pf }: { pf: PortfolioSnapshot }) {
         <Text><Money v={pf.cash} /> {pf.currency}</Text>
       </View>
 
-      <View style={[styles.row, { marginTop: 6 }]} >
+      <View style={[styles.row, { marginTop: 6 }]}>
         <Text style={styles.muted}>일손익 </Text>
         <Text style={{ fontWeight: "700" }}>
           <Money v={pf.pnlDay} /> (<Pct v={pf.pnlDayPct} />)
@@ -122,44 +120,67 @@ export default function Home() {
   const [pf, setPf] = useState<PortfolioSnapshot | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
 
-  // ⬇️ 추가: 브로커 상태
-  const { status, loading: linkLoading } = useBrokerStatus(4000);
-  const isLinked = status === "CONNECTED";
+  // ✅ 계좌 연동 상태
+  const [linked, setLinked] = useState<boolean | null>(null); // null=로딩
+  const [linkLoading, setLinkLoading] = useState(true);
+
+  const checkLinked = useCallback(async () => {
+    try {
+      setLinkLoading(true);
+      const keys = await getApiKeys();
+      const ok = !!(keys?.appkey && keys?.secretkey);
+      setLinked(ok);
+      return ok;
+    } catch (e) {
+      setLinked(false);
+      return false;
+    } finally {
+      setLinkLoading(false);
+    }
+  }, []);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      if (isLinked) {
-        const [portfolioData, positionsData] = await Promise.all([
-          getPortfolio(),
-          getPositions(),
-        ]);
+      const ok = linked ?? (await checkLinked());
+      if (ok) {
+        const [portfolioData, positionsData] = await Promise.all([getPortfolio(), getPositions()]);
         setPf(portfolioData);
         setPositions(positionsData);
       } else {
-        // 미연동: 데이터 초기화
         setPf(null);
         setPositions([]);
       }
     } catch (error) {
-      // 미연동이거나 404면 여기로 올 수 있음
       setPf(null);
       setPositions([]);
       console.error("Failed to fetch data", error);
     } finally {
       setTimeout(() => setRefreshing(false), 500);
     }
-  }, [isLinked]);
+  }, [linked, checkLinked]);
 
+  // 최초 + 포커스될 때마다 새로고침
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        await checkLinked();
+        await onRefresh();
+      })();
+    }, [checkLinked, onRefresh])
+  );
   useEffect(() => {
-    onRefresh();
-  }, [onRefresh]);
+    (async () => {
+      await checkLinked();
+      await onRefresh();
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const bg = scheme === "dark" ? "#0b0f14" : "#fff";
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: bg }]}>
-      {/* 연동 상태 로딩 중 표시(최초 진입 등) */}
+
       {linkLoading && (
         <View style={{ padding: 16 }}>
           <View style={[styles.card, { alignItems: "center" }]}>
@@ -173,8 +194,7 @@ export default function Home() {
         <FlatList
           ListHeaderComponent={
             <>
-              {/* 미연동이면 연동 카드 / 연동이면 기존 카드들 */}
-              {!isLinked ? (
+              {!linked ? (
                 <View style={styles.card}>
                   <Text style={{ fontSize: 18, fontWeight: "800", marginBottom: 6 }}>계좌 연동 필요</Text>
                   <Text style={styles.muted}>계좌를 연결하면 보유 종목과 손익이 표시됩니다.</Text>
@@ -185,11 +205,9 @@ export default function Home() {
                   >
                     <Text style={styles.linkBtnTx}>계좌 연동하기</Text>
                   </TouchableOpacity>
-                  {status === "DISCONNECTED" && (
-                    <Text style={[styles.muted, { marginTop: 6 }]}>
-                      계좌 연동이 아직 설정되지 않았습니다.
-                    </Text>
-                  )}
+                  <Text style={[styles.muted, { marginTop: 6 }]}>
+                    계좌 연동이 아직 설정되지 않았습니다.
+                  </Text>
                 </View>
               ) : (
                 <>
@@ -200,7 +218,7 @@ export default function Home() {
               )}
             </>
           }
-          data={isLinked ? positions : []} // 미연동이면 빈 리스트
+          data={linked ? positions : []}
           keyExtractor={(it) => it.symbol}
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -219,7 +237,7 @@ export default function Home() {
           contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={
-            isLinked ? (
+            linked ? (
               <View style={styles.empty}>
                 <Text style={styles.muted}>보유 종목이 없습니다</Text>
               </View>
@@ -241,8 +259,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#e5e7eb",
   },
   equity: { fontSize: 28, fontWeight: "800", marginTop: 4 },
 
@@ -297,13 +313,13 @@ const styles = StyleSheet.create({
 
   empty: { paddingVertical: 28, alignItems: "center" },
 
-  // ⬇️ 추가: 연동 버튼
+  // 추가된 스타일
   linkBtn: {
-    marginTop: 12,
-    backgroundColor: "#111827",
+    marginTop: 10,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: "center",
+    backgroundColor: "#0f172a",
   },
   linkBtnTx: { color: "#fff", fontWeight: "800" },
 });
