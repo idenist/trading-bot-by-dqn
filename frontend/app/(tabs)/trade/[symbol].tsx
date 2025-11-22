@@ -1,4 +1,4 @@
-// app/trade/[symbol].tsx
+// frontend/app/(tabs)/trade/[symbol].tsx
 import { Feather } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
@@ -15,52 +15,14 @@ import {
   View,
 } from "react-native";
 
-
 import { getChartData } from "@/lib/api/chart";
 import Chart from "@/components/Chart";
 import type { ChartDatum } from "@/lib/api/types";
+import { getStockInfo } from "@/lib/api/stocks";
 
-const rawData = [
-  {'timestamp': 1703689200, 'open': 77700.0, 'high': 78500.0, 'low': 77500.0, 'close': 78500.0},
-  {'timestamp': 1703602800, 'open': 76700.0, 'high': 78000.0, 'low': 76500.0, 'close': 78000.0},
-  {'timestamp': 1703516400, 'open': 76100.0, 'high': 76700.0, 'low': 75700.0, 'close': 76600.0},
-  {'timestamp': 1703170800, 'open': 75800.0, 'high': 76300.0, 'low': 75400.0, 'close': 75900.0},
-  {'timestamp': 1703084400, 'open': 74600.0, 'high': 75000.0, 'low': 74300.0, 'close': 75000.0},
-  {'timestamp': 1702998000, 'open': 74200.0, 'high': 74900.0, 'low': 73800.0, 'close': 74800.0},
-  {'timestamp': 1702911600, 'open': 73000.0, 'high': 73400.0, 'low': 72800.0, 'close': 73400.0},
-  {'timestamp': 1702825200, 'open': 73300.0, 'high': 73400.0, 'low': 72800.0, 'close': 72900.0},
-  {'timestamp': 1702566000, 'open': 73800.0, 'high': 74000.0, 'low': 73200.0, 'close': 73300.0},
-  {'timestamp': 1702479600, 'open': 74100.0, 'high': 74300.0, 'low': 72500.0, 'close': 73100.0},
-  {'timestamp': 1702393200, 'open': 73300.0, 'high': 73500.0, 'low': 72800.0, 'close': 72800.0},
-  {'timestamp': 1702306800, 'open': 73300.0, 'high': 73500.0, 'low': 73100.0, 'close': 73500.0},
-  {'timestamp': 1702220400, 'open': 72800.0, 'high': 73000.0, 'low': 72200.0, 'close': 73000.0},
-  {'timestamp': 1701961200, 'open': 72100.0, 'high': 72800.0, 'low': 71900.0, 'close': 72600.0},
-  {'timestamp': 1701874800, 'open': 71800.0, 'high': 71900.0, 'low': 71100.0, 'close': 71500.0},
-  {'timestamp': 1701788400, 'open': 71800.0, 'high': 72100.0, 'low': 71600.0, 'close': 71700.0},
-  {'timestamp': 1701702000, 'open': 72300.0, 'high': 72400.0, 'low': 71200.0, 'close': 71200.0},
-  {'timestamp': 1701615600, 'open': 72800.0, 'high': 72900.0, 'low': 72400.0, 'close': 72600.0},
-  {'timestamp': 1701356400, 'open': 72400.0, 'high': 72500.0, 'low': 71700.0, 'close': 72000.0},
-  {'timestamp': 1701270000, 'open': 72700.0, 'high': 72800.0, 'low': 72200.0, 'close': 72800.0},
-  {'timestamp': 1701183600, 'open': 72400.0, 'high': 72800.0, 'low': 72200.0, 'close': 72700.0},
-  {'timestamp': 1701097200, 'open': 71400.0, 'high': 72700.0, 'low': 71300.0, 'close': 72700.0},
-  {'timestamp': 1701010800, 'open': 71500.0, 'high': 72100.0, 'low': 71100.0, 'close': 71300.0},
-  {'timestamp': 1700751600, 'open': 72400.0, 'high': 72600.0, 'low': 71700.0, 'close': 71700.0},
-  {'timestamp': 1700665200, 'open': 73000.0, 'high': 73200.0, 'low': 72200.0, 'close': 72400.0},
-  {'timestamp': 1700578800, 'open': 72200.0, 'high': 73000.0, 'low': 71900.0, 'close': 72800.0},
-  {'timestamp': 1700492400, 'open': 73100.0, 'high': 73400.0, 'low': 72700.0, 'close': 72800.0},
-  {'timestamp': 1700406000, 'open': 72100.0, 'high': 73000.0, 'low': 72100.0, 'close': 72700.0},
-  {'timestamp': 1700146800, 'open': 72300.0, 'high': 73000.0, 'low': 72300.0, 'close': 72500.0},
-  {'timestamp': 1700060400, 'open': 72500.0, 'high': 73000.0, 'low': 72300.0, 'close': 72800.0},
-  {'timestamp': 1699974000, 'open': 71600.0, 'high': 72200.0, 'low': 71500.0, 'close': 72200.0},
-  {'timestamp': 1699887600, 'open': 71000.0, 'high': 71100.0, 'low': 70600.0, 'close': 70800.0},
-];
-const data: ChartDatum[] = rawData.map(d => ({
-  timestamp: d.timestamp * 1000,
-  open: d.open,
-  high: d.high,
-  low: d.low,
-  close: d.close,
-})); // ms 변환
+import { placeOrderApi, startAutoTrade } from "@/lib/api/trade";
+
+const MAX_CANDLES = 40;
 
 /** ---------- 타입 ---------- */
 type OrderSide = "BUY" | "SELL";
@@ -81,53 +43,88 @@ function signColor(x: number) {
 }
 
 /** ---------- 메인 ---------- */
-// const chartData = [{'timestamp': 1703689200, 'open': 77700.0, 'high': 78500.0, 'low': 77500.0, 'close': 78500.0}, {'timestamp': 1703602800, 'open': 76700.0, 'high': 78000.0, 'low': 76500.0, 'close': 78000.0}, {'timestamp': 1703516400, 'open': 76100.0, 'high': 76700.0, 'low': 75700.0, 'close': 76600.0}, {'timestamp': 1703170800, 'open': 75800.0, 'high': 76300.0, 'low': 75400.0, 'close': 75900.0}, {'timestamp': 1703084400, 'open': 74600.0, 'high': 75000.0, 'low': 74300.0, 'close': 75000.0}, {'timestamp': 1702998000, 'open': 74200.0, 'high': 74900.0, 'low': 73800.0, 'close': 74800.0}, {'timestamp': 1702911600, 'open': 73000.0, 'high': 73400.0, 'low': 72800.0, 'close': 73400.0}, {'timestamp': 1702825200, 'open': 73300.0, 'high': 73400.0, 'low': 72800.0, 'close': 72900.0}, {'timestamp': 1702566000, 'open': 73800.0, 'high': 74000.0, 'low': 73200.0, 'close': 73300.0}, {'timestamp': 1702479600, 'open': 74100.0, 'high': 74300.0, 'low': 72500.0, 'close': 73100.0}, {'timestamp': 1702393200, 'open': 73300.0, 'high': 73500.0, 'low': 72800.0, 'close': 72800.0}, {'timestamp': 1702306800, 'open': 73300.0, 'high': 73500.0, 'low': 73100.0, 'close': 73500.0}, {'timestamp': 1702220400, 'open': 72800.0, 'high': 73000.0, 'low': 72200.0, 'close': 73000.0}, {'timestamp': 1701961200, 'open': 72100.0, 'high': 72800.0, 'low': 71900.0, 'close': 72600.0}, {'timestamp': 1701874800, 'open': 71800.0, 'high': 71900.0, 'low': 71100.0, 'close': 71500.0}, {'timestamp': 1701788400, 'open': 71800.0, 'high': 72100.0, 'low': 71600.0, 'close': 71700.0}, {'timestamp': 1701702000, 'open': 72300.0, 'high': 72400.0, 'low': 71200.0, 'close': 71200.0}, {'timestamp': 1701615600, 'open': 72800.0, 'high': 72900.0, 'low': 72400.0, 'close': 72600.0}, {'timestamp': 1701356400, 'open': 72400.0, 'high': 72500.0, 'low': 71700.0, 'close': 72000.0}, {'timestamp': 1701270000, 'open': 72700.0, 'high': 72800.0, 'low': 72200.0, 'close': 72800.0}, {'timestamp': 1701183600, 'open': 72400.0, 'high': 72800.0, 'low': 72200.0, 'close': 72800.0}, {'timestamp': 1701097200, 'open': 72000.0, 'high': 72300.0, 'low': 71700.0, 'close': 72200.0}, {'timestamp': 1701010800, 'open': 71300.0, 'high': 71500.0, 'low': 71000.0, 'close': 71300.0}, {'timestamp': 1700751600, 'open': 71000.0, 'high': 71200.0, 'low': 70700.0, 'close': 71200.0}, {'timestamp': 1700665200, 'open': 70500.0, 'high': 70800.0, 'low': 70300.0, 'close': 70700.0}, {'timestamp': 1700578800, 'open': 70600.0, 'high': 70800.0, 'low': 70400.0, 'close': 70500.0}, {'timestamp': 1700492400, 'open': 72500.0, 'high': 72800.0, 'low': 72300.0, 'close': 72700.0}, {'timestamp': 1700406000, 'open': 72800.0, 'high': 73000.0, 'low': 72500.0, 'close': 72800.0}, {'timestamp': 1700146800, 'open': 72300.0, 'high': 72500.0, 'low': 72100.0, 'close': 72200.0}, {'timestamp': 1700060400, 'open': 72200.0, 'high': 72400.0, 'low': 72000.0, 'close': 72200.0}, {'timestamp': 1699974000, 'open': 72200.0, 'high': 72300.0, 'low': 71500.0, 'close': 72000.0}, {'timestamp': 1699887600, 'open': 70800.0, 'high': 71000.0, 'low': 70600.0, 'close': 70900.0}, {'timestamp': 1699801200, 'open': 70800.0, 'high': 71000.0, 'low': 70500.0, 'close': 70600.0}, {'timestamp': 1699542000, 'open': 70300.0, 'high': 70500.0, 'low': 69800.0, 'close': 70100.0}, {'timestamp': 1699455600, 'open': 69600.0, 'high': 70000.0, 'low': 69500.0, 'close': 69700.0}, {'timestamp': 1699369200, 'open': 70900.0, 'high': 71000.0, 'low': 70500.0, 'close': 70600.0}, {'timestamp': 1699282800, 'open': 70200.0, 'high': 70500.0, 'low': 69800.0, 'close': 70500.0}, {'timestamp': 1699196400, 'open': 69700.0, 'high': 69800.0, 'low': 69300.0, 'close': 69500.0}, {'timestamp': 1698937200, 'open': 68600.0, 'high': 69600.0, 'low': 68500.0, 'close': 69600.0}, {'timestamp': 1698850800, 'open': 68000.0, 'high': 68400.0, 'low': 67800.0, 'close': 68300.0}, {'timestamp': 1698764400, 'open': 67300.0, 'high': 67900.0, 'low': 67300.0, 'close': 67800.0}, {'timestamp': 1698678000, 'open': 67600.0, 'high': 67800.0, 'low': 67300.0, 'close': 67300.0}, {'timestamp': 1698332400, 'open': 67000.0, 'high': 67500.0, 'low': 66800.0, 'close': 67500.0}, {'timestamp': 1698246000, 'open': 67000.0, 'high': 67300.0, 'low': 66700.0, 'close': 67000.0}, {'timestamp': 1698159600, 'open': 68000.0, 'high': 68300.0, 'low': 67800.0, 'close': 68000.0}, {'timestamp': 1698073200, 'open': 68900.0, 'high': 69000.0, 'low': 68300.0, 'close': 68300.0}, {'timestamp': 1697727600, 'open': 69500.0, 'high': 69600.0, 'low': 68800.0, 'close': 69000.0}, {'timestamp': 1697641200, 'open': 70000.0, 'high': 70000.0, 'low': 69200.0, 'close': 69200.0}, {'timestamp': 1697554800, 'open': 69300.0, 'high': 69800.0, 'low': 69100.0, 'close': 69800.0}];
 export default function SymbolDetailScreen() {
   const { symbol, name } = useLocalSearchParams<{ symbol: string; name?: string }>();
   const router = useRouter();
-  const [refreshing, setRefreshing] = useState(false);
+
   const [crt, setChart] = useState<ChartDatum[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [chartLoading, setChartLoading] = useState(true);
 
-  // 임시: 틱커 모킹
-  const [quote, setQuote] = useState<Quote>({
-    symbol: symbol ?? "000000.KS",
-    name,
-    price: 79200,
-    changePct: 0.0142,
-  });
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(true);
 
-
+  // 종목 현재가/등락률 로드
   useEffect(() => {
-    // 더미 실시간: 1초마다 ±변동
-    const id = setInterval(() => {
-      setQuote((q) => {
-        const delta = (Math.random() - 0.5) * 200; // ±200원
-        const next = Math.max(1, q.price + delta);
-        // 변동률은 대충 계산(실서비스는 전일종가로 계산)
-        const cp = (next - 78000) / 78000;
-        return { ...q, price: Math.round(next), changePct: cp };
-      });
-    }, 1000);
-    return () => clearInterval(id);
-  }, []);
+    if (!symbol) return;
+    setQuoteLoading(true);
+    (async () => {
+      try {
+        const info = await getStockInfo(symbol);
+        setQuote({
+          symbol: info.symbol,
+          name: name || info.name,
+          price: info.price,
+          changePct: info.changePct,
+        });
+      } catch (e) {
+        console.error("getStockInfo failed:", e);
+        Alert.alert("오류", "종목 정보를 불러오지 못했습니다.");
+      } finally {
+        setQuoteLoading(false);
+      }
+    })();
+  }, [symbol, name]);
 
+  // 차트 데이터 로드
   useEffect(() => {
-    setLoading(true);
-    getChartData(symbol ?? "005963", "1D", "2025-01-01", 30)
+    if (!symbol) return;
+    setChartLoading(true);
+    getChartData((symbol as string) ?? "005930", "1D", 20)
       .then(setChart)
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        console.error("chart load error", e);
+        setChart([]); // 에러 시 빈 배열
+      })
+      .finally(() => setChartLoading(false));
   }, [symbol]);
-  
+
+  const isLoading = quoteLoading || !quote;
+
+  const displayed = React.useMemo(
+    () => (crt.length > MAX_CANDLES ? crt.slice(-MAX_CANDLES) : crt),
+    [crt],
+  );
+
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
         <ScrollView contentContainerStyle={{ padding: 16 }}>
-          <Header quote={quote} onBack={() => router.back()} />
+          {isLoading ? (
+            <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 40 }}>
+              <Text>종목 정보를 불러오는 중입니다…</Text>
+            </View>
+          ) : (
+            <>
+              <Header quote={quote!} onBack={() => router.back()} />
 
-          <Chart data={crt} />
+              {/* 차트 카드 */}
+              <View style={styles.chartCard}>
+                <View style={styles.chartArea}>
+                  <Chart data={displayed} />
+                </View>
+              </View>
 
-          <OrderPanel symbol={quote.symbol} lastPrice={quote.price} />
+              
+              <OrderPanel
+                symbol={quote!.symbol}
+                lastPrice={quote!.price}
+              />
+
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -138,7 +135,10 @@ export default function SymbolDetailScreen() {
 function Header({ quote, onBack }: { quote: Quote; onBack: () => void }) {
   return (
     <View style={styles.header}>
-      <TouchableOpacity onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+      <TouchableOpacity
+        onPress={onBack}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
         <Feather name="chevron-left" size={24} />
       </TouchableOpacity>
       <View style={{ marginLeft: 8, flex: 1 }}>
@@ -158,42 +158,184 @@ function Header({ quote, onBack }: { quote: Quote; onBack: () => void }) {
   );
 }
 
-/** ---------- 주문 패널 ---------- */
+function showAlert(title: string, message: string) {
+  if (Platform.OS === "web") {
+    // 웹에서는 브라우저 alert 사용
+    window.alert(`${title}\n\n${message}`);
+  } else {
+    Alert.alert(title, message);
+  }
+}
 
+/** ---------- 주문 패널 ---------- */
 function OrderPanel({
   symbol,
   lastPrice,
-  onAutoTrade,
 }: {
   symbol: string;
   lastPrice: number;
-  onAutoTrade?: (symbol: string) => void;
 }) {
   const [side, setSide] = useState<OrderSide>("BUY");
   const [type, setType] = useState<OrderType>("LIMIT");
   const [price, setPrice] = useState(String(lastPrice));
   const [qty, setQty] = useState("1");
+  const [submitting, setSubmitting] = useState(false);
 
-  // 간단 계산(수수료/슬리피지는 나중에 실제 값 반영)
-  const notional = useMemo(() => (type === "MARKET" ? lastPrice : Number(price || 0)) * Number(qty || 0), [type, price, qty, lastPrice]);
+  // lastPrice 로드 후 기본값 맞추기
+  useEffect(() => {
+    setPrice(String(lastPrice));
+  }, [lastPrice]);
+
+  // 예상 주문금액 (자동매매 예산으로도 사용)
+  const notional = useMemo(
+    () =>
+      (type === "MARKET" ? lastPrice : Number(price || 0)) *
+      Number(qty || 0),
+    [type, price, qty, lastPrice],
+  );
 
   const canSubmit =
-    Number(qty) > 0 &&
-    (type === "MARKET" || Number(price) > 0);
+    Number(qty) > 0 && (type === "MARKET" || Number(price) > 0);
 
   const onTick = (dir: 1 | -1) => {
     const p = Number(price || 0);
-    const next = Math.max(0, p + dir * 100); // 코스피 최소호가 대략 50/100원 단위, 임시 100원
+    const next = Math.max(0, p + dir * 100); // 실제 최소호가는 나중에 조정
     setPrice(String(next));
   };
 
-  const submit = () => {
-    if (!canSubmit) return;
-    // 여기에 실제 주문 API 호출(멱등키 포함)
-    Alert.alert(
-      "주문 확인",
-      `${symbol}\n${side === "BUY" ? "매수" : "매도"} / ${type}\n가격: ${type === "MARKET" ? "시장가" : formatNum(Number(price))}\n수량: ${qty}\n주문금액: ${formatNum(notional)}`,
-    );
+  // ===== 수동 주문 =====
+  const submit = async () => {
+    if (!canSubmit || submitting) return;
+
+    const body = {
+      symbol,
+      side,
+      type,
+      price: type === "MARKET" ? 0 : Number(price),
+      qty: Number(qty),
+    };
+
+    const summary =
+      `${symbol}\n` +
+      `${side === "BUY" ? "매수" : "매도"} / ${
+        type === "MARKET" ? "시장가" : "지정가"
+      }\n` +
+      `가격: ${
+        type === "MARKET" ? "시장가" : formatNum(Number(price))
+      }\n` +
+      `수량: ${qty}\n` +
+      `주문금액: ${formatNum(notional)} KRW`;
+
+    const doRequest = async () => {
+      try {
+        setSubmitting(true);
+        const res = await placeOrderApi(body);
+        const title = res.success ? "주문 접수" : "주문 실패";
+        const detail = res.message ?? "";
+
+        const msg = res.success
+          ? `${title}\n\norderId: ${res.orderId}`
+          : `${title}\n\n⚠ ${detail} (orderId: ${res.orderId})`;
+
+        if (Platform.OS === "web") {
+          window.alert(msg);
+        } else {
+          Alert.alert(title, msg);
+        }
+      } catch (e: any) {
+        console.error("order error", e);
+        const msg = e?.response?.data?.detail ?? String(e);
+        if (Platform.OS === "web") {
+          window.alert(`주문 실패: ${msg}`);
+        } else {
+          Alert.alert("주문 실패", msg);
+        }
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(`주문 확인\n\n${summary}`)) {
+        await doRequest();
+      }
+    } else {
+      Alert.alert("주문 확인", summary, [
+        { text: "취소", style: "cancel" },
+        { text: "주문", onPress: () => void doRequest() },
+      ]);
+    }
+  };
+
+  // ===== 자동 매매: 현재 입력된 notional을 예산으로 사용 =====
+  const handleAutoTrade = async () => {
+    const budget = Math.floor(notional);
+
+    if (!Number.isFinite(budget) || budget <= 0) {
+      const msg = "자동 매매 전에 가격과 수량을 먼저 입력해주세요.";
+      if (Platform.OS === "web") {
+        window.alert(msg);
+      } else {
+        Alert.alert("입력 오류", msg);
+      }
+      return;
+    }
+
+    const summary =
+      `${symbol} 자동 매매를 시작합니다.\n\n` +
+      `예산: ${formatNum(budget)} KRW\n` +
+      "(현재 입력된 가격 × 수량 기준)\n\n" +
+      "변경하려면 취소 후 가격/수량을 다시 설정하세요.";
+
+    const run = async () => {
+      try {
+        setSubmitting(true);
+
+        // ⬇ 기존 startAutoTrade 시그니처 유지: (stocks: string[], amountPerStock: number)
+        const res = await startAutoTrade([symbol], budget);
+
+        if (!res.success) {
+          const detail = res.message ?? "알 수 없는 오류";
+          if (Platform.OS === "web") {
+            window.alert(`자동 매매 시작 실패: ${detail}`);
+          } else {
+            Alert.alert("자동 매매 시작 실패", detail);
+          }
+          return;
+        }
+
+        const okMsg =
+          `${symbol} 자동 매매가 시작되었습니다.\n\n` +
+          `예산: ${formatNum(budget)} KRW`;
+
+        if (Platform.OS === "web") {
+          window.alert(okMsg);
+        } else {
+          Alert.alert("자동 매매 시작", okMsg);
+        }
+      } catch (e: any) {
+        console.error("[AUTO] start error", e);
+        const detail = e?.response?.data?.detail ?? String(e);
+        if (Platform.OS === "web") {
+          window.alert(`자동 매매 시작 실패: ${detail}`);
+        } else {
+          Alert.alert("자동 매매 시작 실패", detail);
+        }
+      } finally {
+        setSubmitting(false);
+      }
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm(summary)) {
+        await run();
+      }
+    } else {
+      Alert.alert("자동 매매", summary, [
+        { text: "취소", style: "cancel" },
+        { text: "시작", onPress: () => void run() },
+      ]);
+    }
   };
 
   return (
@@ -204,13 +346,27 @@ function OrderPanel({
           style={[styles.sideTab, side === "BUY" && styles.sideTabActiveBuy]}
           onPress={() => setSide("BUY")}
         >
-          <Text style={[styles.sideTabText, side === "BUY" && styles.sideTabTextActive]}>매수</Text>
+          <Text
+            style={[
+              styles.sideTabText,
+              side === "BUY" && styles.sideTabTextActive,
+            ]}
+          >
+            매수
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.sideTab, side === "SELL" && styles.sideTabActiveSell]}
           onPress={() => setSide("SELL")}
         >
-          <Text style={[styles.sideTabText, side === "SELL" && styles.sideTabTextActive]}>매도</Text>
+          <Text
+            style={[
+              styles.sideTabText,
+              side === "SELL" && styles.sideTabTextActive,
+            ]}
+          >
+            매도
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -231,11 +387,16 @@ function OrderPanel({
         <Field label="가격">
           {type === "MARKET" ? (
             <View style={styles.inline}>
-              <Text style={styles.marketPrice}>{formatNum(lastPrice)} (시장가)</Text>
+              <Text style={styles.marketPrice}>
+                {formatNum(lastPrice)} (시장가)
+              </Text>
             </View>
           ) : (
             <View style={styles.priceRow}>
-              <TouchableOpacity style={styles.stepBtn} onPress={() => onTick(-1)}>
+              <TouchableOpacity
+                style={styles.stepBtn}
+                onPress={() => onTick(-1)}
+              >
                 <Feather name="minus" size={16} />
               </TouchableOpacity>
               <TextInput
@@ -245,7 +406,10 @@ function OrderPanel({
                 style={styles.input}
                 placeholder="가격"
               />
-              <TouchableOpacity style={styles.stepBtn} onPress={() => onTick(1)}>
+              <TouchableOpacity
+                style={styles.stepBtn}
+                onPress={() => onTick(1)}
+              >
                 <Feather name="plus" size={16} />
               </TouchableOpacity>
             </View>
@@ -261,8 +425,12 @@ function OrderPanel({
             placeholder="수량"
           />
           <View style={styles.qtyQuick}>
-            {["1","5","10","20"].map((q)=>(
-              <TouchableOpacity key={q} style={styles.qtyPill} onPress={()=>setQty(q)}>
+            {["1", "5", "10", "20"].map((q) => (
+              <TouchableOpacity
+                key={q}
+                style={styles.qtyPill}
+                onPress={() => setQty(q)}
+              >
                 <Text style={styles.qtyPillText}>{q}</Text>
               </TouchableOpacity>
             ))}
@@ -272,23 +440,35 @@ function OrderPanel({
         {/* 요약 */}
         <View style={styles.summary}>
           <Text style={styles.summaryKey}>예상 주문금액</Text>
-          <Text style={styles.summaryVal}>{formatNum(Number(isFinite(notional) ? notional : 0))} KRW</Text>
+          <Text style={styles.summaryVal}>
+            {formatNum(
+              Number(Number.isFinite(notional) ? notional : 0),
+            )}{" "}
+            KRW
+          </Text>
         </View>
 
+        {/* 수동 주문 버튼 */}
         <TouchableOpacity
-          style={[styles.submitBtn, !canSubmit && { opacity: 0.5 } , side === "BUY" ? styles.buyBtn : styles.sellBtn]}
+          style={[
+            styles.submitBtn,
+            !canSubmit && { opacity: 0.5 },
+            side === "BUY" ? styles.buyBtn : styles.sellBtn,
+          ]}
           onPress={submit}
-          disabled={!canSubmit}
+          disabled={!canSubmit || submitting}
           activeOpacity={0.8}
         >
-          <Text style={styles.submitText}>{side === "BUY" ? "매수 주문" : "매도 주문"}</Text>
+          <Text style={styles.submitText}>
+            {side === "BUY" ? "매수 주문" : "매도 주문"}
+          </Text>
         </TouchableOpacity>
 
+        {/* 자동 매매 버튼 */}
         <TouchableOpacity
           style={styles.autoBtn}
-          onPress={() =>
-            onAutoTrade ? onAutoTrade(symbol) : Alert.alert("자동 매매", "봇 관리 화면으로 연결하세요.")
-          }
+          onPress={handleAutoTrade}
+          disabled={submitting}
           activeOpacity={0.85}
         >
           <Text style={styles.autoBtnText}>자동 매매</Text>
@@ -297,6 +477,7 @@ function OrderPanel({
     </View>
   );
 }
+
 
 /** ---------- 보조 컴포넌트 ---------- */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -327,7 +508,14 @@ function Toggle<T extends string>({
             style={[styles.toggleBtn, active && styles.toggleBtnActive]}
             onPress={() => onChange(opt.key)}
           >
-            <Text style={[styles.toggleText, active && styles.toggleTextActive]}>{opt.label}</Text>
+            <Text
+              style={[
+                styles.toggleText,
+                active && styles.toggleTextActive,
+              ]}
+            >
+              {opt.label}
+            </Text>
           </TouchableOpacity>
         );
       })}
@@ -354,33 +542,14 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
   },
-  chartTabs: { flexDirection: "row", gap: 8, marginBottom: 8 },
-  tab: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: "#e2e8f0",
-  },
-  tabActive: { backgroundColor: "#1f2937" },
-  tabText: { color: "#0f172a", fontWeight: "600" },
-  tabTextActive: { color: "#fff" },
   chartArea: {
     height: 200,
     backgroundColor: "#fff",
     borderWidth: 1,
     borderColor: "#e5e7eb",
     borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
+    overflow: "hidden",
   },
-  statRow: {
-    marginTop: 10,
-    flexDirection: "row",
-    gap: 12,
-    flexWrap: "wrap",
-  },
-  statKey: { color: "#64748b" },
-  statVal: { fontWeight: "700" },
 
   orderCard: {
     backgroundColor: "#fff",
@@ -480,13 +649,13 @@ const styles = StyleSheet.create({
   buyBtn: { backgroundColor: "#16a34a" },
   sellBtn: { backgroundColor: "#dc2626" },
   submitText: { color: "#fff", fontWeight: "800", fontSize: 16 },
-  autoBtn: {
-  borderRadius: 12,
-  paddingVertical: 14,
-  alignItems: "center",
-  marginTop: 10,                 // 제출 버튼과 간격
-  backgroundColor: "#0ea5e9",    // 파란 계열(원하면 바꾸세요)
-},
-autoBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
 
+  autoBtn: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 10,
+    backgroundColor: "#0ea5e9",
+  },
+  autoBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
 });

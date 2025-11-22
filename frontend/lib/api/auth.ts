@@ -1,5 +1,7 @@
 import { api } from "@/lib/api/client";
 import { getItem, setItem, deleteItem } from "@/lib/storage";
+import * as SecureStore from "expo-secure-store";
+import { API_BASE_URL } from "./client"; // 너가 쓰는 베이스 URL 모듈 이름에 맞게
 
 export type AuthResp = { accessToken: string; refreshToken?: string };
 
@@ -46,4 +48,24 @@ export async function setApiKeys(data: APIKeyData): Promise<void> {
 
 export async function deleteApiKeys(): Promise<void> {
   await api.delete("/auth/delete_api_keys/");
+}
+
+export async function logout() {
+  const token = await SecureStore.getItemAsync("accessToken");
+
+  if (token) {
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout/`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (e) {
+      console.warn("logout request failed:", e);
+      // 서버 실패해도 로컬 토큰은 지워서 강제 로그아웃
+    }
+  }
+
+  await SecureStore.deleteItemAsync("accessToken");
 }

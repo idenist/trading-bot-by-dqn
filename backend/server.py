@@ -77,9 +77,42 @@ class AIRecommendation(BaseModel):
     confidence: float
     recommended_qty: int
     reason: str
+    
+class PredictResponse(BaseModel):
+    symbol: str
+    action: str      # "BUY" | "SELL" | "HOLD"
+    confidence: float
 
 buy_model = None
 sell_model = None
+
+PREDICT_THRESHOLD = 0.3  # 이 이상이면 실제로 매수/매도 신호로 본다
+
+def _make_features(symbol: str) -> np.ndarray:
+    """
+    TODO: 나중에 실제 피처로 교체.
+    지금은 /ai/recommend 와 동일하게 랜덤 피처 사용.
+    """
+    return np.random.rand(14).astype(np.float32)
+
+def _run_dqn(model: DQN | None, symbol: str) -> tuple[int, float]:
+    """
+    공통 DQN 추론 로직
+    return: (best_action_index, confidence)
+    """
+    if model is None:
+        raise HTTPException(status_code=503, detail="DQN model not loaded")
+
+    features = _make_features(symbol)
+    with torch.no_grad():
+        q = model(torch.FloatTensor([features])).numpy()[0]
+
+    best_idx = int(np.argmax(q))         # 0 or 1
+    delta = float(np.max(q) - np.min(q)) # confidence 비슷한 개념
+    confidence = max(0.0, min(delta, 1.0))  # 0~1로 클램핑(대충)
+
+    return best_idx, confidence
+
 
 @app.on_event("startup")
 async def load_models():
@@ -216,6 +249,52 @@ def health():
         "sell_model_loaded": sell_model is not None,
         "port": 8001
     }
+    
+@app.get("/predict/{symbol}/buy", response_model=PredictResponse)
+async def predict_buy(symbol: str):
+    """
+    자동매매 루프에서 호출하는 BUY 예측 엔드포인트
+    - best_idx == 1 이고 confidence > PREDICT_THRESHOLD 이면 BUY, 아니면 HOLD
+    """
+    if buy_model is None:
+        raise HTTPException(status_code=503, detail="buy_model not loaded")
+
+    best_idx, confidence = _run_dqn(buy_model, symbol)
+
+    if best_idx == 1 and confidence > PREDICT_THRESHOLD:
+        action = "BUY"
+    else:
+        action = "HOLD"
+
+    return PredictResponse(
+        symbol=symbol,
+        action=action,
+        confidence=confidence,
+    )
+
+
+@app.get("/predict/{symbol}/sell", response_model=PredictResponse)
+async def predict_sell(symbol: str):
+    """
+    자동매매 루프에서 호출하는 SELL 예측 엔드포인트
+    - best_idx == 1 이고 confidence > PREDICT_THRESHOLD 이면 SELL, 아니면 HOLD
+    """
+    if sell_model is None:
+        raise HTTPException(status_code=503, detail="sell_model not loaded")
+
+    best_idx, confidence = _run_dqn(sell_model, symbol)
+
+    if best_idx == 1 and confidence > PREDICT_THRESHOLD:
+        action = "SELL"
+    else:
+        action = "HOLD"
+
+    return PredictResponse(
+        symbol=symbol,
+        action=action,
+        confidence=confidence,
+    )
+
 
 @app.get("/")
 def root():

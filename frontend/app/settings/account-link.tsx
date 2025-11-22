@@ -129,6 +129,7 @@ export default function AccountLinkScreen() {
           placeholder="발급받은 App Key 입력"
           value={appKey}
           onChangeText={setAppKey}
+          secureTextEntry
           autoCapitalize="none"
         />
 
