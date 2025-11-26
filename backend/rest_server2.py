@@ -1,6 +1,7 @@
 from kiwoom_python.api import KiwoomAPI
 from kiwoom_python.endpoints.account import *
 from kiwoom_python.endpoints.chart import Chart
+from kiwoom_python.endpoints.stock_info import StockInfo as KiwoomStockInfo
 from kiwoom_python.model import AccountEntry
 from kiwoom_python.exceptions import KiwoomApiError
 from kiwoom_python.endpoints.order import Order, TradeType
@@ -165,12 +166,16 @@ secretkey = os.getenv("SECRET_KEY")
 
 # 유저 - api 매핑
 apis = dict()
-def get_api_for_user(secrets: dict) -> KiwoomAPI:
+def get_api_for_user(email: str, secrets: dict) -> KiwoomAPI:
+    if email in apis:
+        return apis[email]
     user_appkey = secrets.get("appkey")
     user_secretkey = secrets.get("secretkey")
     mock = secrets.get("mock", True)
     assert user_appkey is not None and user_secretkey is not None, "API key not set properly."
-    return KiwoomAPI(user_appkey, user_secretkey, mock)
+    api = KiwoomAPI(user_appkey, user_secretkey, mock)
+    apis[email] = api
+    return api
 
 # Add the CORS middleware to your app
 app.add_middleware(
@@ -235,15 +240,13 @@ def verify_jwt_token(get_api=False):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=f"Token has been invalidated, {type(session_token_version)} vs {type(current_token_version)}"
             )
-        if not get_api:
-            return result
         # 5. api 키 복호화
         if result["apisecret"] is None:
             result['api'] = None
         else:
             AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY")
             secrets = decrypt_dict(result["apisecret"], AUTH_SECRET_KEY)
-            result['api'] = get_api_for_user(secrets)
+            result['api'] = get_api_for_user(email, secrets)
 
         # 6. 페이로드에 유저 정보 추가
         result["token"] = payload
@@ -754,16 +757,16 @@ async def delete_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token())):
 STOCK_MASTER: list[Stock] = []
 stock_master_loading = False
 
-def load_stock_master(api: KiwoomAPI):
+async def load_stock_master(api: KiwoomAPI):
     """키움 API로부터 전체 종목 목록을 로드"""
     global STOCK_MASTER, stock_master_loading
     
-    if stock_master_loading:
+    while stock_master_loading:
         return
     
     stock_master_loading = True
     print("[STOCK_MASTER] 종목 목록 로딩 시작...")
-    info = StockInfo(api)
+    info = KiwoomStockInfo(api)
     
     try:
         all_stocks = []
@@ -858,6 +861,7 @@ async def search_stocks(
       - 그 외에는 로컬 STOCK_MASTER 에서 부분 일치 검색
       - STOCK_MASTER가 비어있으면 백그라운드 로딩 시작
     """
+    print(q)
     if user["api"] is None:
         raise HTTPException(status_code=400, detail="API keys not set")
 
@@ -865,9 +869,9 @@ async def search_stocks(
 
     #  STOCK_MASTER가 비어있고 로딩 중이 아니면 백그라운드 로딩 시작
     if not STOCK_MASTER and not stock_master_loading:
-        Thread(target=load_stock_master, args=(api,), daemon=True).start()
+        asyncio.create_task(load_stock_master(api))
 
-    #  로딩 중이면 안내 메시지 반환
+    #  폴링
     if stock_master_loading:
         return [Stock(symbol="LOADING", name="종목 목록 로딩 중...", market="INFO")]
 
@@ -879,17 +883,10 @@ async def search_stocks(
 
     # 1) 6자리 숫자 코드인 경우: 키움 REST 로 직접 조회
     if query.isdigit() and len(query) == 6:
-        try:
-            info = api.get_stock_info(query)
-            return [
-                Stock(
-                    symbol=info["stk_cd"],
-                    name=info["stk_nm"],
-                    market="KRX",
-                )
-            ]
-        except KiwoomApiError as e:
-            print(f"[stocks/search] get_stock_info 실패: {e}")
+        for stock in STOCK_MASTER:
+            if stock.symbol == query:
+                results.append(stock)
+                return results
 
     # 2) 코드 일부 / 이름 검색: 로컬 마스터에서 부분 매칭
     query_upper = query.upper()
