@@ -763,38 +763,17 @@ def load_stock_master(api: KiwoomAPI):
     
     stock_master_loading = True
     print("[STOCK_MASTER] 종목 목록 로딩 시작...")
+    info = StockInfo(api)
     
     try:
         all_stocks = []
         markets = [("0", "KOSPI"), ("10", "KOSDAQ")]
         
         for market_code, market_name in markets:
-            try:
-                codes = api.get_code_list_by_market(market_code)
-                print(f"[STOCK_MASTER] {market_name}: {len(codes)}개 종목 처리 중...")
-                
-                for i, code in enumerate(codes):
-                    try:
-                        name = api.get_master_code_name(code)
-                        if name and name.strip():
-                            all_stocks.append(Stock(
-                                symbol=code,
-                                name=name.strip(),
-                                market=market_name
-                            ))
-                        
-                        if (i + 1) % 500 == 0:
-                            print(f"[STOCK_MASTER] {market_name} {i+1}개 처리 완료")
-                        
-                        if i % 50 == 0:
-                            time.sleep(0.05)
-                    except Exception as e:
-                        print(f"[STOCK_MASTER] 종목 {code} 오류: {e}")
-                        continue
-                        
-            except Exception as e:
-                print(f"[STOCK_MASTER] {market_name} 로딩 오류: {e}")
-                continue
+            stock_list = info.get_stock_list(market_code)
+            all_stocks.extend(
+                [Stock(symbol=stock["code"], name=stock["name"], market=market_name) for stock in stock_list]
+            )
         
         STOCK_MASTER = all_stocks
         print(f"[STOCK_MASTER] 로딩 완료: 총 {len(STOCK_MASTER)}개")
