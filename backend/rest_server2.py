@@ -750,16 +750,70 @@ async def delete_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token())):
     await update_user_api_keys(db, user["id"], None)
     return {"message": "API keys deleted successfully"}
 
-# ⚠️ 임시용: 자주 쓸 법한 종목 몇 개만 등록
-STOCK_MASTER: list[Stock] = [
-    Stock(symbol="005930", name="삼성전자", market="KOSPI"),
-    Stock(symbol="000660", name="SK하이닉스", market="KOSPI"),
-    Stock(symbol="035420", name="NAVER", market="KOSPI"),
-    Stock(symbol="035720", name="카카오", market="KOSPI"),
-    Stock(symbol="051910", name="LG화학", market="KOSPI"),
-    Stock(symbol="068270", name="셀트리온", market="KOSPI"),
-    Stock(symbol="207940", name="삼성바이오로직스", market="KOSPI"),
-]
+# 전체 종목 마스터 (동적 로딩)
+STOCK_MASTER: list[Stock] = []
+stock_master_loading = False
+
+def load_stock_master(api: KiwoomAPI):
+    """키움 API로부터 전체 종목 목록을 로드"""
+    global STOCK_MASTER, stock_master_loading
+    
+    if stock_master_loading:
+        return
+    
+    stock_master_loading = True
+    print("[STOCK_MASTER] 종목 목록 로딩 시작...")
+    
+    try:
+        all_stocks = []
+        markets = [("0", "KOSPI"), ("10", "KOSDAQ")]
+        
+        for market_code, market_name in markets:
+            try:
+                codes = api.get_code_list_by_market(market_code)
+                print(f"[STOCK_MASTER] {market_name}: {len(codes)}개 종목 처리 중...")
+                
+                for i, code in enumerate(codes):
+                    try:
+                        name = api.get_master_code_name(code)
+                        if name and name.strip():
+                            all_stocks.append(Stock(
+                                symbol=code,
+                                name=name.strip(),
+                                market=market_name
+                            ))
+                        
+                        if (i + 1) % 500 == 0:
+                            print(f"[STOCK_MASTER] {market_name} {i+1}개 처리 완료")
+                        
+                        if i % 50 == 0:
+                            time.sleep(0.05)
+                    except Exception as e:
+                        print(f"[STOCK_MASTER] 종목 {code} 오류: {e}")
+                        continue
+                        
+            except Exception as e:
+                print(f"[STOCK_MASTER] {market_name} 로딩 오류: {e}")
+                print([name for name in dir(api) if 'code' in name.lower()])
+                print([name for name in dir(api) if 'market' in name.lower()])
+                continue
+        
+        STOCK_MASTER = all_stocks
+        print(f"[STOCK_MASTER] 로딩 완료: 총 {len(STOCK_MASTER)}개")
+        print(f"  - KOSPI: {len([s for s in STOCK_MASTER if s.market == 'KOSPI'])}개")
+        print(f"  - KOSDAQ: {len([s for s in STOCK_MASTER if s.market == 'KOSDAQ'])}개")
+        
+    except Exception as e:
+        print(f"[STOCK_MASTER] 로딩 실패: {e}")
+        # 실패 시 기본 종목
+        STOCK_MASTER = [
+            Stock(symbol="005930", name="삼성전자", market="KOSPI"),
+            Stock(symbol="000660", name="SK하이닉스", market="KOSPI"),
+            Stock(symbol="035420", name="NAVER", market="KOSPI"),
+        ]
+    finally:
+        stock_master_loading = False
+
 
 # @app.get("/stocks/search", response_model=List[Stock])
 # def search_stocks(
@@ -819,17 +873,26 @@ STOCK_MASTER: list[Stock] = [
 @app.get("/stocks/search", response_model=List[Stock])
 async def search_stocks(
     q: str = Query(..., min_length=2, description="종목명 또는 종목코드"),
-    user=Depends(verify_jwt_token(get_api=True)),  # ← 각 유저의 KiwoomAPI 사용
+    user=Depends(verify_jwt_token(get_api=True)),
 ):
     """
     종목명/코드 검색:
       - 숫자 6자리면 키움 REST(/api/dostk/stkinfo)로 직접 조회
       - 그 외에는 로컬 STOCK_MASTER 에서 부분 일치 검색
+      - STOCK_MASTER가 비어있으면 백그라운드 로딩 시작
     """
     if user["api"] is None:
         raise HTTPException(status_code=400, detail="API keys not set")
 
     api: KiwoomAPI = user["api"]
+
+    #  STOCK_MASTER가 비어있고 로딩 중이 아니면 백그라운드 로딩 시작
+    if not STOCK_MASTER and not stock_master_loading:
+        Thread(target=load_stock_master, args=(api,), daemon=True).start()
+
+    #  로딩 중이면 안내 메시지 반환
+    if stock_master_loading:
+        return [Stock(symbol="LOADING", name="종목 목록 로딩 중...", market="INFO")]
 
     query = q.strip()
     if len(query) < 2:
@@ -841,16 +904,14 @@ async def search_stocks(
     if query.isdigit() and len(query) == 6:
         try:
             info = api.get_stock_info(query)
-            # 키움 응답 예시: stk_cd, stk_nm, cur_prc, flu_rt, ...
             return [
                 Stock(
                     symbol=info["stk_cd"],
                     name=info["stk_nm"],
-                    market="KRX",  # 필요하면 필드 더 파싱해서 세분화
+                    market="KRX",
                 )
             ]
         except KiwoomApiError as e:
-            # 없는 코드거나 오류 => 아래 로컬 검색으로 fallback
             print(f"[stocks/search] get_stock_info 실패: {e}")
 
     # 2) 코드 일부 / 이름 검색: 로컬 마스터에서 부분 매칭
@@ -867,6 +928,25 @@ async def search_stocks(
                 break
 
     return results
+    
+@app.get("/stocks/all")
+def get_all_stocks(user=Depends(verify_jwt_token(get_api=True))):
+    """전체 종목 목록 반환"""
+    if stock_master_loading:
+        return {
+            "status": "loading",
+            "stocks": [],
+            "total": 0
+        }
+    
+    return {
+        "status": "success",
+        "stocks": [s.dict() for s in STOCK_MASTER],
+        "total": len(STOCK_MASTER),
+        "kospi_count": len([s for s in STOCK_MASTER if s.market == "KOSPI"]),
+        "kosdaq_count": len([s for s in STOCK_MASTER if s.market == "KOSDAQ"])
+    }
+
 
 # ====== 엔드포인트 추가 ======
 @app.get("/stocks/{symbol}", response_model=StockInfo)
