@@ -137,8 +137,16 @@ origins = [
     "http://localhost",
     "http://localhost:8081",
     "http://192.168.0.5:8081",
-    "http://100.*:8081"
+    "http://100.*:8081",
+    "http://100.100.182.104:8081",
 ]
+
+if os.path.exists("stock_master.json"):
+    with open("stock_master.json", "r", encoding="utf-8") as f:
+        tmp = json.load(f)
+        STOCK_MASTER_STATIC = [Stock(**s) for s in tmp]
+else:
+    STOCK_MASTER_STATIC = []
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -715,6 +723,7 @@ async def login_user(user: UserAuthData, db=Depends(get_db)):
     # 2. 비밀번호 검증
     pwd_processor = PasswordProcessor()
     if not pwd_processor.verify_password(user.password, result["password_hash"]):
+        print("Incorrect password")
         raise HTTPException(status_code=400, detail="Incorrect password")
     # 3. 기존 JWT 토큰 무효화 (토큰 버전 증가) (다중 접속 방지)
     await update_user_token_version(db, result["id"], result["token_version"] + 1)
@@ -757,11 +766,16 @@ async def delete_api_keys(db=Depends(get_db), user=Depends(verify_jwt_token())):
 STOCK_MASTER: list[Stock] = []
 stock_master_loading = False
 
-async def load_stock_master(api: KiwoomAPI):
+def load_stock_master(api: KiwoomAPI):
     """키움 API로부터 전체 종목 목록을 로드"""
     global STOCK_MASTER, stock_master_loading
+
+    if STOCK_MASTER_STATIC:
+        STOCK_MASTER = STOCK_MASTER_STATIC
+        print(f"[STOCK_MASTER] 정적 파일에서 로딩 완료: 총 {len(STOCK_MASTER)}개")
+        return
     
-    while stock_master_loading:
+    if stock_master_loading:
         return
     
     stock_master_loading = True
@@ -775,7 +789,7 @@ async def load_stock_master(api: KiwoomAPI):
         for market_code, market_name in markets:
             stock_list = info.get_stock_list(market_code)
             all_stocks.extend(
-                [Stock(symbol=stock["code"], name=stock["name"], market=market_name) for stock in stock_list]
+                [Stock(symbol=stock["code"].upper(), name=stock["name"].upper(), market=market_name) for stock in stock_list]
             )
         
         STOCK_MASTER = all_stocks
@@ -850,6 +864,22 @@ async def load_stock_master(api: KiwoomAPI):
 
 #     return results
 
+def search_str(stock: Stock, query: str) -> bool:
+    start, length = 0, 0
+    name, query = stock.name.upper(), query.upper()
+    while start < len(name):
+        if name[start] != query[0]:
+            start += 1
+            continue
+        break
+
+    while start + length < len(name) and length < len(query):
+        if name[start + length] != query[length]:
+            break
+        length += 1
+
+    return start, length
+
 @app.get("/stocks/search", response_model=List[Stock])
 async def search_stocks(
     q: str = Query(..., min_length=2, description="종목명 또는 종목코드"),
@@ -869,7 +899,7 @@ async def search_stocks(
 
     #  STOCK_MASTER가 비어있고 로딩 중이 아니면 백그라운드 로딩 시작
     if not STOCK_MASTER and not stock_master_loading:
-        asyncio.create_task(load_stock_master(api))
+        load_stock_master(api)
 
     #  폴링
     if stock_master_loading:
@@ -888,20 +918,10 @@ async def search_stocks(
                 results.append(stock)
                 return results
 
-    # 2) 코드 일부 / 이름 검색: 로컬 마스터에서 부분 매칭
-    query_upper = query.upper()
-    query_lower = query.lower()
+    query_list = [(x, search_str(x, query)) for x in STOCK_MASTER]
+    sorted_query_list = sorted([x for x in query_list if x[1][1] == len(query)], key=lambda x: (x[1][0], -x[1][1], x[0].symbol))
 
-    for stock in STOCK_MASTER:
-        if (
-            query_upper in stock.symbol.upper()
-            or query_lower in stock.name.lower()
-        ):
-            results.append(stock)
-            if len(results) >= 50:
-                break
-
-    return results
+    return [x[0] for x in sorted_query_list][:50]
     
 @app.get("/stocks/all")
 def get_all_stocks(user=Depends(verify_jwt_token(get_api=True))):
