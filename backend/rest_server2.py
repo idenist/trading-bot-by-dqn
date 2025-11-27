@@ -901,10 +901,12 @@ def lcs(a: list[str], b: list[str]) -> int:
 
     return dp[m][n]
 
-def search_str(stock: Stock, query: str) -> bool:
+def search_str(stock: Stock, query: str, decomp=False) -> bool:
     start, length = 0, 0
-    name, query = sum([decompose_korean_char(c) for c in stock.name.upper()], []), sum([decompose_korean_char(c) for c in query.upper()], [])
-    print(f"SEARCH_STR: name={name}, query={query}")
+    if decomp:
+        name, query = sum([decompose_korean_char(c) for c in stock.name.upper()], []), sum([decompose_korean_char(c) for c in query.upper()], [])
+    else:
+        name, query = stock.name.upper(), query.upper()
     while start < len(name):
         if name[start] != query[0]:
             start += 1
@@ -956,7 +958,7 @@ async def search_stocks(
                 results.append(stock)
                 return results
 
-    query_list = [(x, search_str(x, query)) for x in STOCK_MASTER]
+    query_list = [(x, search_str(x, query, decomp=True)) for x in STOCK_MASTER]
     sorted_query_list = sorted([x for x in query_list if x[1][1]], key=lambda x: (x[1][0], abs(len(query.encode())-x[1][1]), -x[1][2], x[0].symbol))
 
     return [x[0] for x in sorted_query_list][:50]
