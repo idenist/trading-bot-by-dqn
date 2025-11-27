@@ -789,7 +789,7 @@ def load_stock_master(api: KiwoomAPI):
         for market_code, market_name in markets:
             stock_list = info.get_stock_list(market_code)
             all_stocks.extend(
-                [Stock(symbol=stock["code"].upper(), name=stock["name"].upper(), market=market_name) for stock in stock_list]
+                [Stock(symbol=stock["code"], name=stock["name"], market=market_name) for stock in stock_list]
             )
         
         STOCK_MASTER = all_stocks
