@@ -2,7 +2,7 @@ import { getPortfolio, getPositions } from "@/lib/api/portfolio";
 import { PortfolioSnapshot, Position } from "@/lib/api/types";
 import { Feather, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { getApiKeys, logout } from "@/lib/api/auth";
+import { getApiKeys, logoutApi } from "@/lib/api/auth";
 import { searchStocks } from "@/lib/api/stocks";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -41,12 +41,10 @@ function SearchModal({
 
   const handleSearch = async (text: string) => {
     setSearchText(text);
-    if (text.length < 2) {
-      setSearchResults([]);
-      return;
-    }
     setLoading(true);
+
     try {
+      // ✅ text가 "" 여도 그대로 보냄 → 백엔드가 전체 종목 리턴
       const results = await searchStocks(text);
       setSearchResults(results);
     } catch (e) {
@@ -364,7 +362,7 @@ export default function HomeScreen() {
 
   const handleLogout = async () => {
     try {
-      await logout();
+      await logoutApi();
     } finally {
       router.replace("/(auth)/login"); // 네 라우트 구조에 맞게 경로만 조정
     }

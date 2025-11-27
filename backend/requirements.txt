@@ -6,7 +6,7 @@ yfinance
 ta
 torch
 dotenv
-./kiwoom_python-0.2.3-py3-none-any.whl
+./kiwoom_python-0.2.4-py3-none-any.whl
 sse-starlette
 itsdangerous
 bcrypt>=5.0.0

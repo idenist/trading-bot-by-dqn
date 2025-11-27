@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, ScrollView, Platform, ToastAndroid } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, SafeAreaView, ScrollView, Platform, ToastAndroid} from "react-native";
 import { getApiKeys, setApiKeys, deleteApiKeys } from "@/lib/api/auth"; // 아래 2️⃣에 추가할 함수들
-import { useRouter } from "expo-router";
+import { useRouter, Link } from "expo-router";
 
 export default function AccountLinkScreen() {
   const [appKey, setAppKey] = useState("");
@@ -121,7 +121,13 @@ export default function AccountLinkScreen() {
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>키움증권 API 키 설정</Text>
-        <Text style={styles.desc}>모의투자 환경이라면 mock=True 상태를 유지하세요.</Text>
+        <Text style={styles.desc}>
+          <Link href={"https://openapi.kiwoom.com/mgmt/VOpenApiRegView?dummyVal=0"} style={styles.link}>
+            키움증권 REST API
+          </Link>
+          {`에서 API KEY와 SECRET KEY를 복사해서 가져와주세요.`}
+        </Text>
+        <Text style={styles.desc}>모의투자 환경이라면 Mock 모드를 활성화하세요.</Text>
 
         <Text style={styles.label}>App Key</Text>
         <TextInput
@@ -212,4 +218,6 @@ const styles = StyleSheet.create({
 
   delBtn: { alignItems: "center", marginTop: 16 },
   delText: { color: "#dc2626", fontWeight: "600" },
+
+  link: { color: "#2563eb", textDecorationLine: "underline" },
 });
