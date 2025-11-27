@@ -863,10 +863,48 @@ def load_stock_master(api: KiwoomAPI):
 #                     return results
 
 #     return results
+import unicodedata
+cho = ["ㄱ","ㄲ","ㄴ","ㄷ","ㄸ","ㄹ","ㅁ","ㅂ","ㅃ","ㅅ","ㅆ","ㅇ","ㅈ","ㅉ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"]
+jung = ["ㅏ","ㅐ","ㅑ","ㅒ","ㅓ","ㅔ","ㅕ","ㅖ","ㅗ","ㅘ","ㅙ","ㅚ","ㅛ","ㅜ","ㅝ","ㅞ","ㅟ","ㅠ","ㅡ","ㅢ","ㅣ"]
+jong = ["","ㄱ","ㄲ","ㄳ","ㄴ","ㄵ","ㄶ","ㄷ","ㄹ","ㄺ","ㄻ","ㄼ","ㄽ","ㄾ","ㄿ","ㅀ","ㅁ","ㅂ","ㅄ","ㅅ","ㅆ","ㅇ","ㅈ","ㅊ","ㅋ","ㅌ","ㅍ","ㅎ"]  
+def decompose_korean_char(c: str) -> list[str]:
+    """한글 음절을 초성, 중성, 종성으로 분해"""
+    if c in cho or c in jung or c in jong:
+        return [c]  # 이미 자모인 경우 그대로 반환
+    result = []
+    code = ord(c) - 0xAC00
+    if code < 0 or code > 11171:
+        return [c]  # 한글 음절이 아니면 원래 문자 반환
+
+    jongseong_index = code % 28
+    jungseong_index = ((code - jongseong_index) // 28) % 21
+    choseong_index = ((code - jongseong_index) // 28) // 21
+
+    result.append(cho[choseong_index])
+    result.append(jung[jungseong_index])
+    if jongseong_index != 0:
+        result.append(jong[jongseong_index])
+
+    return result
+    
+def lcs(a: list[str], b: list[str]) -> int:
+    """두 리스트의 최장 공통 부분 수열 길이 반환"""
+    m, n = len(a), len(b)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if a[i - 1] == b[j - 1]:
+                dp[i][j] = dp[i - 1][j - 1] + 1
+            else:
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1])
+
+    return dp[m][n]
 
 def search_str(stock: Stock, query: str) -> bool:
     start, length = 0, 0
-    name, query = stock.name.upper(), query.upper()
+    name, query = sum([decompose_korean_char(c) for c in stock.name.upper()], []), sum([decompose_korean_char(c) for c in query.upper()], [])
+    print(f"SEARCH_STR: name={name}, query={query}")
     while start < len(name):
         if name[start] != query[0]:
             start += 1
@@ -878,7 +916,7 @@ def search_str(stock: Stock, query: str) -> bool:
             break
         length += 1
 
-    return start, length
+    return start, length, lcs(name, query)
 
 @app.get("/stocks/search", response_model=List[Stock])
 async def search_stocks(
@@ -919,7 +957,7 @@ async def search_stocks(
                 return results
 
     query_list = [(x, search_str(x, query)) for x in STOCK_MASTER]
-    sorted_query_list = sorted([x for x in query_list if x[1][1] == len(query)], key=lambda x: (x[1][0], -x[1][1], x[0].symbol))
+    sorted_query_list = sorted([x for x in query_list if x[1][1]], key=lambda x: (x[1][0], abs(len(query.encode())-x[1][1]), -x[1][2], x[0].symbol))
 
     return [x[0] for x in sorted_query_list][:50]
     
